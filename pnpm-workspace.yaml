@@ -1,2 +1,8 @@
 allowBuilds:
   esbuild: true
+# Fork-only supply-chain policy (supply-chain.md §6.6).
+# Refuse versions published less than 7 days ago (malicious-release window), in minutes.
+minimumReleaseAge: 10080
+# Fail when a package's trust evidence (provenance / trusted publisher) downgrades
+# compared with earlier versions.
+trustPolicy: no-downgrade

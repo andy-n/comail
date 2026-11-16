@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { CalendarDrawer } from "./components/calendar/CalendarDrawer";
 import { CalendarScreen } from "./components/calendar/CalendarScreen";
 import { EventCreate } from "./components/calendar/EventCreate";
@@ -38,8 +37,6 @@ import {
   registerCommands,
 } from "./keyboard/registry";
 import { call } from "./ipc/commands";
-import { checkForUpdate } from "./ipc/updater";
-import { useInstallUpdate } from "./lib/useInstallUpdate";
 import { applyAccent, DEFAULT_ACCENT } from "./lib/accent";
 import { applyFont } from "./lib/font";
 import { initSounds } from "./lib/sound";
@@ -68,7 +65,6 @@ export default function App() {
   useBackendEvents();
   useDockBadge();
   useThemeSync();
-  useStartupUpdateCheck();
 
   useEffect(() => installKeyboard(), []);
   useEffect(() => installMouseNav(), []);
@@ -182,39 +178,6 @@ export default function App() {
       <FpsMeter />
     </div>
   );
-}
-
-/**
- * On launch, quietly ask GitHub whether a newer signed build exists. If one
- * does, offer it as a toast with a "Restart & install" action. Failures
- * (offline, no published release, mock mode) are swallowed - this is best
- * effort and must never interrupt startup.
- */
-function useStartupUpdateCheck() {
-  const { t } = useTranslation();
-  const pushToast = useUi((s) => s.pushToast);
-  const install = useInstallUpdate();
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const update = await checkForUpdate();
-        if (!update || cancelled) return;
-        pushToast({
-          kind: "info",
-          message: t("settings:about.updateAvailable", { version: update.version }),
-          actionLabel: t("settings:about.restartInstall"),
-          onAction: () => install(update),
-          durationMs: 30000,
-        });
-      } catch {
-        // best effort; ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [t, pushToast, install]);
 }
 
 /**

@@ -17,6 +17,7 @@ description = "Comail - a fast, offline-first, keyboard-driven email client"
 authors = ["hello@deanoss.com"]
 license = "AGPL-3.0-only"
 edition = "2021"
+publish = false
 
 [lib]
 name = "comail_lib"
@@ -32,8 +33,6 @@ tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
 tauri-plugin-window-state = "2"
 serde.workspace = true
 serde_json.workspace = true

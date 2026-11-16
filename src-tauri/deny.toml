@@ -1,0 +1,107 @@
+# cargo-deny policy for the personal Comail fork (fork-only; not upstreamed).
+# Run from src-tauri/: cargo deny --locked check
+# Rationale: ~/security-audit-skill/comail/own-audit/supply-chain.md §1 and §6.5.
+
+[graph]
+# Only the platforms this fork ships.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+all-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+unmaintained = "workspace" # fail only for crates a workspace member pulls in directly
+unsound = "all"
+yanked = "deny"
+ignore = [
+  # Each entry MUST carry a reason; re-verify reachability on every upstream sync.
+  { id = "RUSTSEC-2026-0367", reason = "zip 8.x via calamine/candle-core: comail only reads entries (preview.rs:304,472) and never calls ZipArchive::extract. Re-check 2027-01-15" },
+  { id = "RUSTSEC-2026-0368", reason = "zip 8.x: same as RUSTSEC-2026-0367, extract() not reachable" },
+  { id = "RUSTSEC-2026-0369", reason = "zip 8.x: same as RUSTSEC-2026-0367, extract() not reachable" },
+  { id = "RUSTSEC-2026-0429", reason = "zip 8.x: same as RUSTSEC-2026-0367, extract() not reachable" },
+  { id = "RUSTSEC-2026-0459", reason = "bundled SQLite WAL bug needs an attacker-written db + -wal pair inside the user's own app data dir (local attacker only); clears with rusqlite >= 0.41" },
+  { id = "RUSTSEC-2026-0486", reason = "rustix xattr unsoundness: only via gethostname <- mail-builder; xattr APIs are not used" },
+  { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O-safety: comail never constructs AsyncFd from foreign fds" },
+
+  # --- TEMPORARY: fixed by the chore/security-bumps branch ---------------------
+  # Delete this whole block once chore/security-bumps (ammonia 4.2.5, calamine
+  # 0.38, pulldown-cmark 0.13.6, ctutils 0.4.4) is merged into the fork.
+  # calamine is the only one reachable from mailed input (SC-7).
+  { id = "RUSTSEC-2026-0436", reason = "TEMPORARY until chore/security-bumps: calamine < 0.38, a mailed .xls can crash/OOM the attachment previewer (preview.rs:243) on user preview" },
+  { id = "RUSTSEC-2026-0533", reason = "TEMPORARY until chore/security-bumps: ammonia < 4.2.5; no math/svg/raw-text tags are allowed (mime/mod.rs:1052-1080), so the precondition is not met" },
+  { id = "RUSTSEC-2026-0433", reason = "TEMPORARY until chore/security-bumps: pulldown-cmark < 0.13.6; ENABLE_WIKILINKS is not enabled (preview.rs:201-204)" },
+  { id = "RUSTSEC-2026-0414", reason = "TEMPORARY until chore/security-bumps: pulldown-cmark < 0.13.6; ENABLE_WIKILINKS is not enabled (preview.rs:201-204)" },
+  { id = "RUSTSEC-2026-0385", reason = "TEMPORARY until chore/security-bumps: ctutils < 0.4.4 timing issue, only via zip AES/pbkdf2 with no secret-dependent use in comail" },
+  # --- end TEMPORARY ------------------------------------------------------------
+]
+
+[licenses]
+allow = [
+  "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause",
+  "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0",
+  "MPL-2.0", "CC0-1.0", "BSL-1.0", "0BSD", "CDLA-Permissive-2.0",
+  "Unlicense", "bzip2-1.0.6", "MIT-0",
+]
+confidence-threshold = 0.9
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true # needs publish = false on the workspace crates
+highlight = "all"
+deny = [
+  { crate = "openssl", reason = "rustls-only TLS is a design property; native TLS adds a second trust store" },
+  { crate = "openssl-sys", reason = "see openssl" },
+  { crate = "native-tls", reason = "see openssl" },
+]
+
+[bans.build]
+# Every crate allowed to run a build.rs in the macOS graph (upstream d2384cd minus
+# the removed updater/process plugins). A NEW name failing this check after an
+# upstream sync is a review trigger: read that crate's build.rs before adding it.
+# `cargo metadata` over-approximates (it listed quinn, quinn-udp and ref-cast,
+# which are never built here), so regenerate as the intersection with the
+# graph cargo-deny actually checks:
+#   cargo metadata --locked --format-version 1 --filter-platform aarch64-apple-darwin \
+#     | jq -r '(.resolve.nodes|map(.id)) as $ids|.packages[]|select(.id as $i|$ids|index($i))
+#              |select(.source!=null)|select([.targets[].kind[]]|index("custom-build"))|.name' \
+#     | sort -u > /tmp/build.txt
+#   cargo deny --locked list -l crate | sed 's/@.*//' | sort -u > /tmp/graph.txt
+#   comm -12 /tmp/build.txt /tmp/graph.txt
+allow-build-scripts = [
+  "ahash", "anyhow", "aws-lc-rs", "aws-lc-sys", "blake3", "camino", "constant_time_eq",
+  "cookie", "crc32fast", "crossbeam-deque", "crossbeam-epoch", "crossbeam-utils",
+  "erased-serde", "esaxx-rs", "generic-array", "getrandom", "httparse",
+  "icu_normalizer_data", "icu_properties_data", "indexmap", "libc", "libm",
+  "libsqlite3-sys", "mac-notification-sys", "mime_guess", "nix", "num-traits", "objc2",
+  "objc2-exception-helper", "onig_sys", "parking_lot_core", "paste", "portable-atomic",
+  "prettyplease", "proc-macro2", "pulldown-cmark", "pulp", "quote",
+  "rayon-core", "redb", "rfd", "ring", "rustix", "rustls", "rustversion",
+  "schemars", "selectors", "serde", "serde_core", "serde_json", "sha2-asm", "swift-rs",
+  "system-configuration-sys", "tauri", "tauri-plugin-clipboard-manager",
+  "tauri-plugin-deep-link", "tauri-plugin-dialog", "tauri-plugin-fs",
+  "tauri-plugin-notification", "tauri-plugin-opener", "tauri-plugin-window-state",
+  "tauri-runtime", "tauri-runtime-wry", "thiserror", "typeid", "web_atoms", "wry",
+  "zerocopy", "zmij", "zstd-safe", "zstd-sys",
+]
+executables = "deny" # prebuilt binaries shipped inside crates
+interpreted = "warn" # shell/python/perl scripts inside crates with a build.rs
+enable-builtin-globs = false
+include-dependencies = true
+include-workspace = false
+include-archives = true
+bypass = [
+  # Reviewed: assembler-generator perl/shell/go sources compiled by build.rs.
+  { crate = "aws-lc-sys", allow-globs = ["aws-lc/**", "**/*.pl", "**/*.sh", "**/*.go"] },
+  { crate = "ring", allow-globs = ["**/*.pl"] },
+  { crate = "onig_sys", allow-globs = ["oniguruma/**"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -623,16 +623,7 @@
   "about": {
     "section": "À propos",
     "version": "Version",
-    "versionHint": "Rechercher et installer la dernière version depuis GitHub.",
-    "checkUpdates": "Rechercher des mises à jour",
-    "checking": "Vérification…",
-    "upToDate": "Vous avez la dernière version.",
-    "updateAvailable": "La version {{version}} est disponible.",
-    "restartInstall": "Redémarrer et installer",
-    "preparingUpdate": "Préparation de la mise à jour…",
-    "downloading": "Téléchargement de la mise à jour… {{percent}} %",
-    "downloadingUnknown": "Téléchargement de la mise à jour…",
-    "installing": "Installation de la mise à jour…",
+    "versionHint": "Cette version ne se met pas à jour toute seule. Recompilez-la depuis les sources pour obtenir une version plus récente.",
     "logs": "Journaux",
     "logsHint": "Ouvrir le dossier où les fichiers journaux sont stockés sur cet ordinateur.",
     "openLogs": "Afficher le dossier des journaux"
@@ -693,7 +684,7 @@
     "reading": "Ouverture des messages et ce qui se passe après une action.",
     "compose": "Comportement d'envoi et vos signatures.",
     "calendar": "Vue du calendrier, rappels de réunion et calendriers connectés.",
-    "about": "Version, mises à jour et diagnostics.",
+    "about": "Version et diagnostics.",
     "mcp": "Laissez Claude, ChatGPT, Cursor, VS Code et d'autres apps d'IA utiliser votre courrier via MCP."
   },
   "rag": {

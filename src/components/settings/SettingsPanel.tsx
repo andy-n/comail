@@ -8,9 +8,8 @@ import i18n, {
 } from "../../i18n";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import { appVersion, checkForUpdate } from "../../ipc/updater";
+import { appVersion } from "../../ipc/app";
 import { HEATMAP_OPACITY, heatmapLevel } from "../../lib/heatmap";
-import { useInstallUpdate } from "../../lib/useInstallUpdate";
 import type {
   AiTier,
   Settings,
@@ -603,7 +602,7 @@ export function SettingsPanel() {
     {
       tab: "about",
       label: t("settings:about.section"),
-      keywords: "about version update upgrade release check",
+      keywords: "about version build logs",
     },
   ];
 
@@ -1432,45 +1431,15 @@ const AI_PROVIDER_PRESETS: {
   },
 ];
 
-/** Version readout plus a manual "check for updates" against GitHub Releases. */
+/** Version readout and logs folder. Updates come from rebuilding from source. */
 function AboutSection() {
   const { t } = useTranslation();
   const pushToast = useUi((s) => s.pushToast);
-  const install = useInstallUpdate();
   const [version, setVersion] = useState("");
-  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     void appVersion().then(setVersion);
   }, []);
-
-  async function onCheck() {
-    setChecking(true);
-    try {
-      const update = await checkForUpdate();
-      if (update) {
-        pushToast({
-          kind: "info",
-          message: t("settings:about.updateAvailable", {
-            version: update.version,
-          }),
-          actionLabel: t("settings:about.restartInstall"),
-          onAction: () => install(update),
-          durationMs: 30000,
-        });
-      } else {
-        pushToast({
-          kind: "info",
-          message: t("settings:about.upToDate"),
-          durationMs: 3000,
-        });
-      }
-    } catch (err) {
-      pushToast({ kind: "error", message: errorMessage(err) });
-    } finally {
-      setChecking(false);
-    }
-  }
 
   async function onOpenLogs() {
     try {
@@ -1486,14 +1455,9 @@ function AboutSection() {
         label={t("settings:about.version")}
         hint={t("settings:about.versionHint")}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-base tabular-nums text-ink-muted">
-            {version || "…"}
-          </span>
-          <Button size="sm" busy={checking} onClick={() => void onCheck()}>
-            {checking ? t("settings:about.checking") : t("settings:about.checkUpdates")}
-          </Button>
-        </div>
+        <span className="text-base tabular-nums text-ink-muted">
+          {version || "…"}
+        </span>
       </SettingRow>
       <SettingRow
         label={t("settings:about.logs")}

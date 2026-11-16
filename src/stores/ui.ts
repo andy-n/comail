@@ -85,8 +85,6 @@ export interface ToastItem {
   durationMs?: number;
   /** show a live countdown of remaining seconds (undo send) */
   countdown?: boolean;
-  /** 0..1 determinate progress; null = indeterminate; undefined = hidden. */
-  progress?: number | null;
 }
 
 export interface ComposerState {
@@ -280,8 +278,6 @@ interface UiState {
   openComposer: (c: ComposerState) => void;
   closeComposer: () => void;
   pushToast: (t: Omit<ToastItem, "id" | "expiresAt"> & { durationMs?: number }) => number;
-  /** Mutate an existing toast in place (e.g. live download progress). No-op if gone. */
-  updateToast: (id: number, partial: Partial<Omit<ToastItem, "id">>) => void;
   dismissToast: (id: number) => void;
 }
 
@@ -512,11 +508,6 @@ export const useUi = create<UiState>((set, get) => ({
     toastTimers.set(id, timer);
     return id;
   },
-
-  updateToast: (id, partial) =>
-    set((state) => ({
-      toasts: state.toasts.map((t) => (t.id === id ? { ...t, ...partial } : t)),
-    })),
 
   dismissToast: (id) => {
     const timer = toastTimers.get(id);

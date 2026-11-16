@@ -623,16 +623,7 @@
   "about": {
     "section": "Acerca de",
     "version": "Versión",
-    "versionHint": "Busca e instala la última versión desde GitHub.",
-    "checkUpdates": "Buscar actualizaciones",
-    "checking": "Comprobando…",
-    "upToDate": "Tienes la última versión.",
-    "updateAvailable": "La versión {{version}} está disponible.",
-    "restartInstall": "Reiniciar e instalar",
-    "preparingUpdate": "Preparando actualización…",
-    "downloading": "Descargando actualización… {{percent}} %",
-    "downloadingUnknown": "Descargando actualización…",
-    "installing": "Instalando actualización…",
+    "versionHint": "Esta compilación no se actualiza sola. Vuelve a compilarla desde el código fuente para obtener una versión más reciente.",
     "logs": "Registros",
     "logsHint": "Abre la carpeta donde se guardan los archivos de registro en este ordenador.",
     "openLogs": "Ver carpeta de registros"
@@ -693,7 +684,7 @@
     "reading": "Cómo se abren los mensajes y qué pasa después de actuar sobre uno.",
     "compose": "Comportamiento al enviar y tus firmas.",
     "calendar": "Vista de calendario, recordatorios de reuniones y calendarios conectados.",
-    "about": "Versión, actualizaciones y diagnóstico.",
+    "about": "Versión y diagnóstico.",
     "mcp": "Permite que Claude, ChatGPT, Cursor, VS Code y otras apps de IA usen tu correo mediante MCP."
   },
   "rag": {

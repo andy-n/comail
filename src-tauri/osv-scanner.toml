@@ -1,0 +1,29 @@
+# osv-scanner ignores for src-tauri/Cargo.lock (fork-only; osv-scanner loads it
+# automatically for the lockfile next to it). Only GHSA records with no RUSTSEC
+# alias belong here: every RUSTSEC id is ignored, with its reason, in deny.toml,
+# which scripts/fork/sync-review.sh also honours. Re-check each entry on every sync.
+#
+# zip 8.6.0 is reached only through calamine (spreadsheet preview) and
+# candle-core (npz loading); comail's own zip use is zip 9 (preview.rs:303-305,
+# 472-477). Neither calamine 0.36 nor candle-core 0.11 calls extract() or any
+# *_decrypt API (grep of their sources), see supply-chain.md §1.1.
+
+[[IgnoredVulns]]
+id = "GHSA-8hxf-qr8p-62x4"
+effectiveUntil = 2027-01-15
+reason = "zip 8.x AES HMAC bypass: affects decrypting AES entries; no dependent decrypts zip entries"
+
+[[IgnoredVulns]]
+id = "GHSA-9hj8-73fh-9963"
+effectiveUntil = 2027-01-15
+reason = "zip 8.x legacy Shrink/Reduce/Implode decoder: DoS at worst, on a user-opened attachment preview"
+
+[[IgnoredVulns]]
+id = "GHSA-hjqx-j4rw-g7xv"
+effectiveUntil = 2027-01-15
+reason = "zip 8.x symlink escape in ZipArchive::extract: extract() is never called"
+
+[[IgnoredVulns]]
+id = "GHSA-m665-v7pm-7grj"
+effectiveUntil = 2027-01-15
+reason = "zip 8.x dual-header parser differential: extract() is never called and no security decision depends on zip metadata"
