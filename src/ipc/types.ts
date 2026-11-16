@@ -482,6 +482,9 @@ export interface Settings {
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;
+  /** OpenRouter only: route chat and decision requests to zero-data-retention
+   *  providers that don't collect prompts. */
+  aiZeroRetention: boolean;
   aiModel: string;
   /** Per-tier model ids (shared base URL + key). Empty falls back to `aiModel`. */
   aiModelInstant: string;
@@ -592,6 +595,8 @@ export interface Settings {
   embeddingBackend: "local" | "off";
   /** Registry key of the local embedding model. */
   embeddingModel: string;
+  /** Suggest AI quick replies when a reply composer opens (sends the thread). */
+  aiQuickReplies: boolean;
   /** When true, AI drafts are written in the user's learned voice. */
   voiceDrafting: boolean;
   /** Distilled writing-style profile learned from sent mail. */

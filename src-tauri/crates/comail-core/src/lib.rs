@@ -23,6 +23,7 @@ pub mod oauth;
 pub mod otp;
 pub mod preview;
 pub mod provider;
+pub mod quarantine;
 pub mod queue;
 pub mod route;
 pub mod scheduler;
@@ -1049,14 +1050,16 @@ impl Core {
         match plan {
             unsubscribe::UnsubscribePlan::OneClick { url } => {
                 match unsubscribe::post_one_click(&url).await {
+                    // The URL and recipient identify the user to the list (and
+                    // often carry a token), so only the message id is logged.
                     Ok(()) => {
-                        tracing::info!(message_id, %url, "one-click unsubscribe accepted");
+                        tracing::info!(message_id, "one-click unsubscribe accepted");
                         Ok(UnsubscribeOutcome::OneClick)
                     }
                     // The endpoint exists but didn't take the POST (blocked
                     // bots, expired token, outage): let the user finish there.
                     Err(e) => {
-                        tracing::warn!(message_id, %url, error = %e, "one-click unsubscribe failed; deferring to browser");
+                        tracing::warn!(message_id, error = %e, "one-click unsubscribe failed; deferring to browser");
                         Ok(UnsubscribeOutcome::NeedsBrowser { url })
                     }
                 }
@@ -1064,7 +1067,7 @@ impl Core {
             unsubscribe::UnsubscribePlan::Mailto { to, subject, body } => {
                 self.send_unsubscribe_mail(detail.account_id, &to, &subject, &body)
                     .await?;
-                tracing::info!(message_id, %to, "mailto unsubscribe sent");
+                tracing::info!(message_id, "mailto unsubscribe sent");
                 Ok(UnsubscribeOutcome::MailtoSent)
             }
             unsubscribe::UnsubscribePlan::Browser { url } => {
@@ -1801,6 +1804,8 @@ impl Core {
 
         if let Some(path) = file_path {
             if tokio::fs::metadata(&path).await.is_ok() {
+                // Files cached before quarantining existed get it now.
+                quarantine::mark(std::path::Path::new(&path))?;
                 return Ok(path);
             }
         }
@@ -1867,6 +1872,9 @@ impl Core {
         let path = dir.join(&safe_name);
         let partial = dir.join(".download.part");
         tokio::fs::write(&partial, &bytes).await?;
+        // Quarantined before it gets its real name, so the OS never sees the
+        // final file without the flag.
+        quarantine::mark(&partial)?;
         tokio::fs::rename(&partial, &path).await?;
 
         let path_str = path.to_string_lossy().to_string();
@@ -1889,6 +1897,7 @@ impl Core {
     pub async fn save_attachment(&self, attachment_id: i64, dest: String) -> Result<()> {
         let src = self.get_attachment(attachment_id).await?;
         tokio::fs::copy(&src, &dest).await?;
+        quarantine::mark(std::path::Path::new(&dest))?;
         Ok(())
     }
 
@@ -2962,6 +2971,7 @@ impl Core {
             },
             api_key,
             language: ai::ui_language_name(&settings.language).map(str::to_string),
+            zero_retention: settings.ai_zero_retention,
             usage_sink: self.usage_sink(scenario),
         })
     }
@@ -3072,6 +3082,7 @@ impl Core {
             api_key,
             dialect,
             min_confidence: settings.decision_min_confidence.clamp(0.0, 1.0),
+            zero_retention: settings.ai_zero_retention,
             usage_sink: self.usage_sink(Scenario::Categorize),
         })
     }
@@ -3277,8 +3288,12 @@ impl Core {
     /// Up to 3 short one-tap reply suggestions grounded in the thread, shown
     /// as chips in an empty reply composer. Runs on the instant tier: the
     /// chips are only useful if they appear before the user starts typing.
+    /// With `ai_quick_replies` off nothing is sent and the list is empty.
     pub async fn ai_quick_replies(&self, thread_id: i64) -> Result<Vec<String>> {
         let settings = self.db.read(|conn| repo::settings::get(conn)).await?;
+        if !settings.ai_quick_replies {
+            return Ok(Vec::new());
+        }
         let cfg = self.ai_config_from(&settings, Scenario::QuickReply).await?;
         let detail = self.get_thread(thread_id).await?;
         let budget = ai::apple::context_chars(&cfg.base_url, 12_000);
@@ -3536,9 +3551,10 @@ impl Core {
                 Ok(out)
             })
             .await;
+        // Query text stays out of the log: it is often a name or address.
         tracing::debug!(
-            "search '{}': branches {:?}, rank+hydrate {:?}",
-            parsed.text,
+            query_chars = parsed.text.chars().count(),
+            "search: branches {:?}, rank+hydrate {:?}",
             t_branches,
             t0.elapsed() - t_branches
         );
@@ -5284,9 +5300,17 @@ fn ext_for_mime(mime: &str) -> Option<&'static str> {
     )
 }
 
+/// Unicode `Bidi_Control` characters. In a filename they reorder how the name
+/// is displayed, e.g. `invoice\u{202E}fdp.app` shows as `invoiceppa.pdf`, so a
+/// sender can disguise the real extension.
+fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
 fn safe_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
+        .filter(|&c| !is_bidi_control(c))
         .map(|c| {
             if c == '/' || c == '\\' || c == '\0' || c.is_control() {
                 '_'
@@ -6156,5 +6180,26 @@ mod attachment_ext_tests {
     #[test]
     fn unknown_mime_has_no_extension() {
         assert_eq!(ext_for_mime("application/x-unknown"), None);
+    }
+
+    #[test]
+    fn safe_filename_strips_bidi_controls() {
+        // Right-to-left override disguising an app as a PDF.
+        assert_eq!(safe_filename("invoice\u{202E}fdp.app"), "invoicefdp.app");
+        let every = "a\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\
+                     \u{2066}\u{2067}\u{2068}\u{2069}b.txt";
+        assert_eq!(safe_filename(every), "ab.txt");
+        // Removing them can't expose a leading dot or leave an empty name.
+        assert_eq!(safe_filename("\u{202E}.hidden"), "hidden");
+        assert_eq!(safe_filename("\u{202E}\u{2066}"), "attachment");
+    }
+
+    #[test]
+    fn safe_filename_blocks_traversal_and_controls() {
+        assert_eq!(safe_filename("../../etc/passwd"), "_.._etc_passwd");
+        assert_eq!(safe_filename("a\\b\0c\nd.pdf"), "a_b_c_d.pdf");
+        assert_eq!(safe_filename(" .. "), "attachment");
+        assert_eq!(safe_filename("résumé 2026.pdf"), "résumé 2026.pdf");
+        assert_eq!(safe_filename(&"x".repeat(300)).chars().count(), 200);
     }
 }
