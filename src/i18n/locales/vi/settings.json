@@ -615,16 +615,7 @@
   "about": {
     "section": "Giới thiệu",
     "version": "Phiên bản",
-    "versionHint": "Kiểm tra và cài đặt phiên bản mới nhất từ GitHub.",
-    "checkUpdates": "Kiểm tra cập nhật",
-    "checking": "Đang kiểm tra…",
-    "upToDate": "Bạn đang dùng phiên bản mới nhất.",
-    "updateAvailable": "Đã có phiên bản {{version}}.",
-    "restartInstall": "Khởi động lại và cài đặt",
-    "preparingUpdate": "Đang chuẩn bị cập nhật…",
-    "downloading": "Đang tải bản cập nhật… {{percent}}%",
-    "downloadingUnknown": "Đang tải bản cập nhật…",
-    "installing": "Đang cài đặt bản cập nhật…",
+    "versionHint": "Bản dựng này không tự cập nhật. Hãy dựng lại từ mã nguồn để có phiên bản mới hơn.",
     "logs": "Nhật ký",
     "logsHint": "Mở thư mục chứa các tệp nhật ký trên máy tính này.",
     "openLogs": "Xem thư mục nhật ký"
@@ -685,7 +676,7 @@
     "reading": "Cách thư được mở và điều xảy ra sau khi bạn thao tác.",
     "compose": "Cách gửi thư và chữ ký của bạn.",
     "calendar": "Chế độ xem lịch, nhắc cuộc họp và lịch đã kết nối.",
-    "about": "Phiên bản, cập nhật và chẩn đoán.",
+    "about": "Phiên bản và chẩn đoán.",
     "mcp": "Cho phép Claude, ChatGPT, Cursor, VS Code và các ứng dụng AI khác dùng thư của bạn qua MCP."
   },
   "rag": {

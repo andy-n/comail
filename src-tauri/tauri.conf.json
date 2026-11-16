@@ -32,7 +32,6 @@
       "deb",
       "appimage"
     ],
-    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -61,12 +60,6 @@
       "desktop": {
         "schemes": ["mailto"]
       }
-    },
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0MUYwODhGNzhDQTA0NzQKUldSMEJNcDRqd2dmNUFRenVJYkE3ZDZFZWdXSUNscmQ3VS9iMFBBa2FIRXlGTDhuWDFYdTUxU0UK",
-      "endpoints": [
-        "https://github.com/NextOSP/comail/releases/latest/download/latest.json"
-      ]
     }
   }
 }

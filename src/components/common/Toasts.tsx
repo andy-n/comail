@@ -93,25 +93,6 @@ export function Toasts() {
                 style={{ width: `${Math.max(0, (1 - progress) * 100)}%` }}
               />
             )}
-            {t.progress !== undefined && (
-              <span
-                className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-accent/10"
-                aria-hidden
-              >
-                <span
-                  className={`co-progress-fill absolute inset-y-0 left-0 bg-accent ${
-                    t.progress == null ? "is-indeterminate" : "is-loading"
-                  }`}
-                  style={
-                    t.progress == null
-                      ? undefined
-                      : {
-                          width: `${Math.min(100, Math.max(0, t.progress * 100))}%`,
-                        }
-                  }
-                />
-              </span>
-            )}
           </div>
         );
       })}

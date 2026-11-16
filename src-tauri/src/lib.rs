@@ -217,8 +217,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         // Remember the main window's geometry across restarts. VISIBLE is
         // deliberately left out of the flags: the window launches hidden
         // (tauri.conf `visible: false`) and the frontend reveals it, so a

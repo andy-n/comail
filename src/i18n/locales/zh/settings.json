@@ -615,16 +615,7 @@
   "about": {
     "section": "关于",
     "version": "版本",
-    "versionHint": "从 GitHub 检查并安装最新版本。",
-    "checkUpdates": "检查更新",
-    "checking": "检查中…",
-    "upToDate": "已是最新版本。",
-    "updateAvailable": "版本 {{version}} 可用。",
-    "restartInstall": "重启并安装",
-    "preparingUpdate": "正在准备更新…",
-    "downloading": "正在下载更新… {{percent}}%",
-    "downloadingUnknown": "正在下载更新…",
-    "installing": "正在安装更新…",
+    "versionHint": "此版本不会自动更新。请从源代码重新构建以获取新版本。",
     "logs": "日志",
     "logsHint": "打开本机存放日志文件的文件夹。",
     "openLogs": "查看日志文件夹"
@@ -685,7 +676,7 @@
     "reading": "邮件如何打开，以及操作后接下来发生什么。",
     "compose": "发送行为和你的签名。",
     "calendar": "日历视图、会议提醒和已连接的日历。",
-    "about": "版本、更新和诊断。",
+    "about": "版本和诊断。",
     "mcp": "通过 MCP 让 Claude、ChatGPT、Cursor、VS Code 等 AI 应用使用你的邮件。"
   },
   "rag": {
