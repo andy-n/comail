@@ -24,17 +24,6 @@ ignore = [
   { id = "RUSTSEC-2026-0459", reason = "bundled SQLite WAL bug needs an attacker-written db + -wal pair inside the user's own app data dir (local attacker only); clears with rusqlite >= 0.41" },
   { id = "RUSTSEC-2026-0486", reason = "rustix xattr unsoundness: only via gethostname <- mail-builder; xattr APIs are not used" },
   { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O-safety: comail never constructs AsyncFd from foreign fds" },
-
-  # --- TEMPORARY: fixed by the chore/security-bumps branch ---------------------
-  # Delete this whole block once chore/security-bumps (ammonia 4.2.5, calamine
-  # 0.38, pulldown-cmark 0.13.6, ctutils 0.4.4) is merged into the fork.
-  # calamine is the only one reachable from mailed input (SC-7).
-  { id = "RUSTSEC-2026-0436", reason = "TEMPORARY until chore/security-bumps: calamine < 0.38, a mailed .xls can crash/OOM the attachment previewer (preview.rs:243) on user preview" },
-  { id = "RUSTSEC-2026-0533", reason = "TEMPORARY until chore/security-bumps: ammonia < 4.2.5; no math/svg/raw-text tags are allowed (mime/mod.rs:1052-1080), so the precondition is not met" },
-  { id = "RUSTSEC-2026-0433", reason = "TEMPORARY until chore/security-bumps: pulldown-cmark < 0.13.6; ENABLE_WIKILINKS is not enabled (preview.rs:201-204)" },
-  { id = "RUSTSEC-2026-0414", reason = "TEMPORARY until chore/security-bumps: pulldown-cmark < 0.13.6; ENABLE_WIKILINKS is not enabled (preview.rs:201-204)" },
-  { id = "RUSTSEC-2026-0385", reason = "TEMPORARY until chore/security-bumps: ctutils < 0.4.4 timing issue, only via zip AES/pbkdf2 with no secret-dependent use in comail" },
-  # --- end TEMPORARY ------------------------------------------------------------
 ]
 
 [licenses]
