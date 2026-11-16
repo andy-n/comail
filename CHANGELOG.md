@@ -17,6 +17,32 @@ Installers for every release are on the
   it in place, J/K walks into it, and its row previews the newest subjects
   in the bundle's label color. The tab bar is hidden on Important while it
   is on.
+- **Zero data retention on OpenRouter.** A new AI setting (on by default)
+  asks OpenRouter to route chat and decision requests only to providers
+  that don't keep or train on your mail.
+- **Quick replies can be turned off.** Opening a reply no longer has to
+  send the thread to your AI provider.
+
+### Fixed
+
+- One message the IMAP parser can't read no longer stalls header sync for
+  every folder after it; it syncs without its MIME structure or is skipped
+  and retried later.
+- Meeting invites and recurring events with malformed or hostile values no
+  longer crash the app, and a crash in one database job no longer stops
+  sync, actions and settings until relaunch.
+- Attachments opened or saved from Comail get the macOS quarantine flag, so
+  Gatekeeper checks them, and bidi control characters are stripped from
+  their names.
+- Remote images in messages are loaded without a referrer.
+- Logs default to info level, no longer contain message headers,
+  unsubscribe URLs or search text, and the log file is private to you.
+
+### Security
+
+- Dependency updates for RUSTSEC-2026-0436 (calamine), RUSTSEC-2026-0533
+  (ammonia), RUSTSEC-2026-0414 and -0433 (pulldown-cmark) and
+  RUSTSEC-2026-0385 (ctutils).
 
 ## [0.2.41] - 2026-10-22
 
