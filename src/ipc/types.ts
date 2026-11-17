@@ -204,6 +204,8 @@ export interface MoveUndo {
     routedTab: string | null;
     addedLabels: number[];
     removedLabels: number[];
+    /** The star before the move, when the move changed it. */
+    starred?: boolean;
   }[];
   senders: { key: string; keyword: string | null }[];
 }
@@ -1210,8 +1212,14 @@ export interface Commands {
   }): Promise<void>;
   /** Drag-and-drop: move threads into an inbox tab, given as a route key
    *  (`important`, `other`, `split:<id>` of a label tab, `label:<id>` of an
-   *  AI category). Label tabs get their label (synced as an IMAP keyword). */
-  move_threads_to_tab(args: { threadIds: number[]; to: string }): Promise<MoveOutcome>;
+   *  AI category), dragged out of tab `from` when they all came from one
+   *  (null: wherever routing filed each). Label tabs get their label or star
+   *  (synced to IMAP); a view tab only adds. */
+  move_threads_to_tab(args: {
+    threadIds: number[];
+    to: string;
+    from: string | null;
+  }): Promise<MoveOutcome>;
   /** Revert a move with the `undo` it returned. */
   undo_move_threads(args: { undo: MoveUndo }): Promise<void>;
 

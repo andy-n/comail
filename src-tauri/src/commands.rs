@@ -982,16 +982,18 @@ pub async fn reorder_tabs(
 }
 
 /// Drag-and-drop: move threads into an inbox tab (`important`, `other`,
-/// `split:<id>` or `label:<id>`).
+/// `split:<id>` or `label:<id>`), dragged out of tab `from` when the UI knows
+/// it (a view tab's bundle), else wherever routing filed each thread.
 #[tauri::command]
 pub async fn move_threads_to_tab(
     state: State<'_, AppState>,
     thread_ids: Vec<i64>,
     to: RouteKey,
+    from: Option<RouteKey>,
 ) -> CmdResult<comail_core::route::manual::MoveOutcome> {
     state
         .core
-        .move_threads_to_tab(thread_ids, to)
+        .move_threads_to_tab(thread_ids, to, from)
         .await
         .map_err(err)
 }

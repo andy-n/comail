@@ -120,7 +120,8 @@
     "unstarred": "Suivi annulé",
     "markedRead": "Marqué lu",
     "markedUnread": "Marqué non lu",
-    "movedToTab": "Déplacé vers {{name}}"
+    "movedToTab": "Déplacé vers {{name}}",
+    "addedToTab": "Ajouté à {{name}}"
   },
   "undo": {
     "tooLate": "Trop tard, le message est déjà envoyé",

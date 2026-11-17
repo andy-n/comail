@@ -17,6 +17,7 @@
     "count_one": "{{count}} conversación",
     "count_other": "{{count}} conversaciones",
     "moveTo": "Mover a {{name}}",
+    "addTo": "Añadir a {{name}}",
     "cantDrop": "{{name}} se ordena por una regla",
     "held_one": "{{count}} conversación no se movió: {{name}} la ordena por regla",
     "held_other": "{{count}} conversaciones no se movieron: {{name}} las ordena por regla"

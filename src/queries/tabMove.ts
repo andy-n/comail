@@ -3,7 +3,7 @@ import i18n from "../i18n";
 import { call } from "../ipc/commands";
 import { errorMessage } from "../ipc/errors";
 import type { Label, MoveUndo, SplitRule, ThreadPage, ThreadSummary } from "../ipc/types";
-import { labelsAfterMove, tabRoute, type TabRoute } from "../lib/tabDrop";
+import { isViewTab, labelTab, tabRoute, threadAfterMove, type TabRoute } from "../lib/tabDrop";
 import { useUi } from "../stores/ui";
 import { findCachedSummary } from "./actions";
 import { queryClient } from "./client";
@@ -33,29 +33,42 @@ function cachedTab(
   return tab && { tab, accountId: accountId as number | null };
 }
 
-/** Moved threads leave every other tab's list and join the target's, newest
- *  first, so bundles and tabs update before the backend answers. */
+/** One cached page after the move: moved threads leave it (`leave`) or show
+ *  their new labels and star in place, and `joining` threads are merged in
+ *  newest first. */
 function moveInPage(
   threads: ThreadSummary[],
-  ids: ReadonlySet<number>,
+  moved: ReadonlyMap<number, ThreadSummary>,
+  leave: boolean,
   joining: ThreadSummary[] | null,
 ): ThreadSummary[] {
-  const rest = threads.filter((t) => !ids.has(t.id));
+  const rest = leave
+    ? threads.filter((t) => !moved.has(t.id))
+    : threads.map((t) => moved.get(t.id) ?? t);
   if (!joining || joining.length === 0) return rest;
-  return [...rest, ...joining].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  const joined = new Set(joining.map((t) => t.id));
+  return [...rest.filter((t) => !joined.has(t.id)), ...joining].sort(
+    (a, b) => b.lastMessageAt - a.lastMessageAt,
+  );
 }
 
-function applyOptimisticMove(ids: number[], to: TabRoute) {
+function applyOptimisticMove(ids: number[], to: TabRoute, from: TabRoute | null) {
   const splits = queryClient.getQueryData<SplitRule[]>(["splits"]);
   const labels = queryClient.getQueryData<Label[]>(["labels"]);
   const autoLabels = new Set((labels ?? []).filter((l) => l.isAuto).map((l) => l.id));
-  const idSet = new Set(ids);
-  const moved = ids.flatMap((id) => {
-    const s = findCachedSummary(id);
-    return s ? [{ ...s, labels: labelsAfterMove(s.labels, to, splits, labels) }] : [];
-  });
+  const moved = new Map(
+    ids.flatMap((id) => {
+      const s = findCachedSummary(id);
+      return s ? [[id, { ...s, ...threadAfterMove(s, to, from, splits, labels) }] as const] : [];
+    }),
+  );
   const joiningFor = (accountId: number | null) =>
-    moved.filter((s) => accountId == null || s.accountId === accountId);
+    [...moved.values()].filter((s) => accountId == null || s.accountId === accountId);
+  // A view tab target only adds; anything else takes the mail out of every
+  // tab but view tabs. The label tab it was dragged out of loses it either way.
+  const viewTarget = isViewTab(to, splits);
+  const leaves = (tab: TabRoute) =>
+    (tab === from && labelTab(from, splits) != null) || (!viewTarget && !isViewTab(tab, splits));
 
   for (const [key] of queryClient.getQueriesData({ queryKey: ["threads"] })) {
     const at = cachedTab(key, autoLabels);
@@ -68,7 +81,8 @@ function applyOptimisticMove(ids: number[], to: TabRoute) {
           ...p,
           threads: moveInPage(
             p.threads,
-            idSet,
+            moved,
+            leaves(at.tab),
             at.tab === to && i === 0 ? joiningFor(at.accountId) : null,
           ),
         })),
@@ -81,7 +95,12 @@ function applyOptimisticMove(ids: number[], to: TabRoute) {
     queryClient.setQueryData<ThreadPage>(key, (page) =>
       page && {
         ...page,
-        threads: moveInPage(page.threads, idSet, at.tab === to ? joiningFor(at.accountId) : null),
+        threads: moveInPage(
+          page.threads,
+          moved,
+          leaves(at.tab),
+          at.tab === to ? joiningFor(at.accountId) : null,
+        ),
       },
     );
   }
@@ -89,19 +108,28 @@ function applyOptimisticMove(ids: number[], to: TabRoute) {
 
 /**
  * Drag-and-drop: move threads into inbox tab `to` (named `toName` in the
- * toast). Optimistic like archive: lists and bundles update at once, the
- * backend plans and applies the real change, then everything refetches. The
- * toast offers Undo, and Z undoes it too.
+ * toast), dragged out of tab `from` when they all came from one. Optimistic
+ * like archive: lists and bundles update at once, the backend plans and
+ * applies the real change, then everything refetches. The toast offers Undo,
+ * and Z undoes it too.
  */
-export async function moveThreadsToTab(ids: number[], to: TabRoute, toName: string): Promise<void> {
+export async function moveThreadsToTab(
+  ids: number[],
+  to: TabRoute,
+  toName: string,
+  from: TabRoute | null,
+): Promise<void> {
   if (ids.length === 0) return;
   const ui = useUi.getState();
-  applyOptimisticMove(ids, to);
+  const added = isViewTab(to, queryClient.getQueryData<SplitRule[]>(["splits"]));
+  applyOptimisticMove(ids, to, from);
   if (ui.selection.length > 0) ui.clearSelection();
   try {
-    const outcome = await call("move_threads_to_tab", { threadIds: ids, to });
+    const outcome = await call("move_threads_to_tab", { threadIds: ids, to, from });
     if (outcome.moved.length > 0) {
-      const label = i18n.t("commands:actionLabel.movedToTab", { name: toName });
+      const label = i18n.t(added ? "commands:actionLabel.addedToTab" : "commands:actionLabel.movedToTab", {
+        name: toName,
+      });
       const n = outcome.moved.length;
       useUi.getState().set({ lastUndo: { type: "move", undo: outcome.undo } });
       useUi.getState().pushToast({

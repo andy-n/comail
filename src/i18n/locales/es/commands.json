@@ -120,7 +120,8 @@
     "unstarred": "Sin destacar",
     "markedRead": "Marcado como leído",
     "markedUnread": "Marcado como no leído",
-    "movedToTab": "Movido a {{name}}"
+    "movedToTab": "Movido a {{name}}",
+    "addedToTab": "Añadido a {{name}}"
   },
   "undo": {
     "tooLate": "Demasiado tarde, el mensaje ya se envió",

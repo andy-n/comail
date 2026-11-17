@@ -19,6 +19,7 @@ pub mod decide;
 pub mod manual;
 pub mod reroute;
 pub mod sql;
+pub mod tab;
 pub use decide::{Decision, RouteExplanation, RuleSubject, decide, explain};
 
 /// Everything the heuristic / AI classifier needs about a thread, taken from its

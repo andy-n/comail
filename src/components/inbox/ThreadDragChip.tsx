@@ -4,7 +4,8 @@ import { useThreadDrag } from "../../lib/threadDrag";
 import { Icon } from "../ui/Icon";
 
 /** Follows the pointer while mail is dragged: what is moving, and where it
- *  would land ("Move to Receipts") or that the tab under it refuses mail. */
+ *  would land ("Move to Receipts", "Add to Starred" for a view tab) or that
+ *  the tab under it refuses mail. */
 export function ThreadDragChip() {
   const { t } = useTranslation();
   const drag = useThreadDrag((s) => s.drag);
@@ -25,7 +26,7 @@ export function ThreadDragChip() {
       {over && (
         <span className={`shrink-0 truncate ${over.ok ? "font-medium text-accent" : "text-ink-faint"}`}>
           {over.ok
-            ? t("inbox:drag.moveTo", { name: over.name })
+            ? t(over.view ? "inbox:drag.addTo" : "inbox:drag.moveTo", { name: over.name })
             : t("inbox:drag.cantDrop", { name: over.name })}
         </span>
       )}

@@ -4165,7 +4165,9 @@ impl Core {
                 route::reroute::validate_target(conn, id, target, exclusive)?;
                 // A view tab is listed in SQL; an asynchronous AI verdict
                 // can't take part in that.
-                let has_ai = ai.as_ref().is_some_and(|a| !a.instruction.trim().is_empty());
+                let has_ai = ai
+                    .as_ref()
+                    .is_some_and(|a| !a.instruction.trim().is_empty());
                 if !exclusive && has_ai {
                     return Err(CoreError::Other(
                         "a tab that keeps mail in the inbox can't use an AI check".into(),
@@ -4335,18 +4337,21 @@ impl Core {
     }
 
     /// Drag-and-drop "move to tab": put each thread into inbox tab `to` (a
-    /// label split, an AI category, Important or Other). Label changes go
-    /// through the normal label actions, so they sync to IMAP as keywords.
-    /// Threads a rule the drop can't undo keeps in place are reported in
-    /// `held`; `undo` reverts the whole move ([`Core::undo_move_threads`]).
+    /// label tab, an AI category, Important or Other), dragged out of `from`
+    /// (`None` = wherever routing filed it). Label and star changes go
+    /// through the normal actions, so they sync to IMAP as keywords and
+    /// `\Flagged`. Threads a rule the drop can't undo keeps in place are
+    /// reported in `held`; `undo` reverts the whole move
+    /// ([`Core::undo_move_threads`]).
     pub async fn move_threads_to_tab(
         &self,
         thread_ids: Vec<i64>,
         to: RouteKey,
+        from: Option<RouteKey>,
     ) -> Result<route::manual::MoveOutcome> {
         let (outcome, accounts) = self
             .db
-            .write(move |conn| apply_tab_move(conn, &thread_ids, to))
+            .write(move |conn| apply_tab_move(conn, &thread_ids, to, from))
             .await?;
         self.bus.emit(CoreEvent::MailUpdated {
             thread_ids: outcome.moved.clone(),
@@ -4357,8 +4362,9 @@ impl Core {
         Ok(outcome)
     }
 
-    /// Revert a [`Core::move_threads_to_tab`]: take back the labels it added,
-    /// restore the ones it removed, and put routes and sender verdicts back.
+    /// Revert a [`Core::move_threads_to_tab`]: take back the labels and star
+    /// it added, restore the ones it removed, and put routes and sender
+    /// verdicts back.
     pub async fn undo_move_threads(&self, undo: route::manual::MoveUndo) -> Result<()> {
         let (thread_ids, accounts) = self
             .db
@@ -5771,8 +5777,29 @@ pub(crate) fn enqueue_move(
     )
 }
 
-/// Label action on one thread through [`apply_thread_action`] (local change +
-/// queued IMAP keyword), collecting the accounts whose queue needs a nudge.
+/// One thread action through [`apply_thread_action`] (local change + queued
+/// IMAP label keyword or `\Flagged`), collecting the accounts whose queue
+/// needs a nudge.
+fn queue_thread_action(
+    conn: &mut rusqlite::Connection,
+    thread_id: i64,
+    kind: ActionKind,
+    label_id: Option<i64>,
+    accounts: &mut Vec<i64>,
+) -> Result<()> {
+    let params = label_id.map(|label_id| ActionParams {
+        wake_at: None,
+        target_folder_id: None,
+        label_id: Some(label_id),
+    });
+    for (_, account_id) in apply_thread_action(conn, thread_id, kind, params.as_ref())? {
+        if !accounts.contains(&account_id) {
+            accounts.push(account_id);
+        }
+    }
+    Ok(())
+}
+
 fn label_thread(
     conn: &mut rusqlite::Connection,
     thread_id: i64,
@@ -5785,17 +5812,21 @@ fn label_thread(
     } else {
         ActionKind::RemoveLabel
     };
-    let params = ActionParams {
-        wake_at: None,
-        target_folder_id: None,
-        label_id: Some(label_id),
+    queue_thread_action(conn, thread_id, kind, Some(label_id), accounts)
+}
+
+fn star_thread(
+    conn: &mut rusqlite::Connection,
+    thread_id: i64,
+    star: bool,
+    accounts: &mut Vec<i64>,
+) -> Result<()> {
+    let kind = if star {
+        ActionKind::Star
+    } else {
+        ActionKind::Unstar
     };
-    for (_, account_id) in apply_thread_action(conn, thread_id, kind, Some(&params))? {
-        if !accounts.contains(&account_id) {
-            accounts.push(account_id);
-        }
-    }
-    Ok(())
+    queue_thread_action(conn, thread_id, kind, None, accounts)
 }
 
 /// Execute [`Core::move_threads_to_tab`]: plan each thread with
@@ -5805,6 +5836,7 @@ fn apply_tab_move(
     conn: &mut rusqlite::Connection,
     thread_ids: &[i64],
     to: RouteKey,
+    from: Option<RouteKey>,
 ) -> Result<(route::manual::MoveOutcome, Vec<i64>)> {
     use route::manual::{
         Category, HeldThread, MoveFacts, MovePlan, MoveStep, SenderUndo, ThreadUndo,
@@ -5840,6 +5872,7 @@ fn apply_tab_move(
             subject: &subject,
             routed_tab: routed_tab.as_deref(),
             sender: sender.as_deref(),
+            from,
         };
         let steps = match route::manual::plan_move(to, &facts, &splits, &categories) {
             Err(_) => return Err(not_droppable()),
@@ -5858,7 +5891,9 @@ fn apply_tab_move(
             routed_tab,
             added_labels: Vec::new(),
             removed_labels: Vec::new(),
+            starred: None,
         };
+        let mut routed = false;
         for step in steps {
             match step {
                 MoveStep::AddLabel(label_id) => {
@@ -5869,10 +5904,17 @@ fn apply_tab_move(
                     label_thread(conn, thread_id, label_id, false, &mut accounts)?;
                     undo.removed_labels.push(label_id);
                 }
+                MoveStep::Star(star) => {
+                    star_thread(conn, thread_id, star, &mut accounts)?;
+                    undo.starred.get_or_insert(!star);
+                }
                 // The planner replayed the rules on the new labels, so this is
                 // the route a reroute would pick (or, for categories and
                 // Important/Other, the one no rule decides).
-                MoveStep::Route(key) => route::apply_tab(conn, thread_id, Some(&key.to_string()))?,
+                MoveStep::Route(key) => {
+                    route::apply_tab(conn, thread_id, Some(&key.to_string()))?;
+                    routed = true;
+                }
                 MoveStep::CacheSender { key, keyword } => {
                     if !outcome.undo.senders.iter().any(|s| s.key == key) {
                         let prior: Option<String> = conn
@@ -5890,6 +5932,11 @@ fn apply_tab_move(
                     route::cache_put(conn, &key, &keyword)?;
                 }
             }
+        }
+        // A view tab drop (or one onto the tab routing already chose) leaves
+        // the route to the rules, which a learned exclude may have changed.
+        if !routed {
+            route::reroute_threads_after_change(conn, &[thread_id])?;
         }
         outcome.moved.push(thread_id);
         outcome.undo.threads.push(undo);
@@ -5910,6 +5957,9 @@ fn revert_tab_move(
         }
         for &label_id in &t.removed_labels {
             label_thread(conn, t.thread_id, label_id, true, &mut accounts)?;
+        }
+        if let Some(starred) = t.starred {
+            star_thread(conn, t.thread_id, starred, &mut accounts)?;
         }
         route::apply_tab(conn, t.thread_id, t.routed_tab.as_deref())?;
     }

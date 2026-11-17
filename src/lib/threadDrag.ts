@@ -9,7 +9,7 @@ import {
   swallowClickAfterRelease,
   swallowNextClick,
 } from "./pointerDrag";
-import { canDropOnTab, type TabRoute } from "./tabDrop";
+import { canDropOnTab, isViewTab, type TabRoute } from "./tabDrop";
 
 const DROP_ATTR = "data-drop-tab";
 
@@ -19,8 +19,8 @@ export function dropTargetProps(route: TabRoute, name: string) {
 }
 
 /** The drop target under the pointer; `ok` false = it refuses mail (a sender
- *  or subject rule's tab). */
-export type DropHover = { route: TabRoute; name: string; ok: boolean };
+ *  or subject rule's tab); `view` = a view tab, which only adds the mail. */
+export type DropHover = { route: TabRoute; name: string; ok: boolean; view: boolean };
 
 export type ThreadDrag = {
   ids: number[];
@@ -56,18 +56,17 @@ export function pickUpThreads(opts: {
   moved: boolean;
 }) {
   const { ids, subject, from } = opts;
+  // The one tab every dragged thread came from, if there is one.
+  const source = from.size === 1 ? [...from][0] : null;
   let moved = opts.moved;
 
   const hover = (x: number, y: number): DropHover | null => {
     const el = elementWithAttr(x, y, DROP_ATTR);
     const route = el?.getAttribute(DROP_ATTR) as TabRoute | null | undefined;
     if (!el || !route || (from.size === 1 && from.has(route))) return null;
-    const ok = canDropOnTab(
-      route,
-      queryClient.getQueryData<SplitRule[]>(["splits"]),
-      queryClient.getQueryData<Label[]>(["labels"]),
-    );
-    return { route, name: el.dataset.dropName ?? "", ok };
+    const splits = queryClient.getQueryData<SplitRule[]>(["splits"]);
+    const ok = canDropOnTab(route, splits, queryClient.getQueryData<Label[]>(["labels"]));
+    return { route, name: el.dataset.dropName ?? "", ok, view: isViewTab(route, splits) };
   };
   const show = (x: number, y: number) => {
     const over = moved ? hover(x, y) : null;
@@ -93,7 +92,7 @@ export function pickUpThreads(opts: {
     // A hold released in place is a slow click: let it open the thread.
     if (!moved) return;
     swallowNextClick();
-    if (over?.ok) void moveThreadsToTab(ids, over.route, over.name);
+    if (over?.ok) void moveThreadsToTab(ids, over.route, over.name, source);
   };
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key !== "Escape") return;

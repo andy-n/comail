@@ -1,5 +1,5 @@
-import type { Label, RuleCondition, SplitRule } from "../ipc/types";
-import { queryToCondition } from "./ruleCondition";
+import type { Label, SplitRule } from "../ipc/types";
+import { sameAnchor, tabMatch, type TabAnchor } from "./labelTabs";
 
 /** An inbox tab as `move_threads_to_tab` addresses it (a route key). */
 export type TabRoute = "important" | "other" | `split:${number}` | `label:${number}`;
@@ -18,26 +18,28 @@ export function tabRoute(tab: { splitId?: number | null; labelId?: number | null
   return null;
 }
 
-/** Label ids of a label-only condition (a bare label, or any-of labels, also
- *  wrapped in a one-child `all` as legacy queries are); null for anything
- *  else. Mirrors `label_only` in route/manual.rs. */
-function labelOnly(c: RuleCondition): number[] | null {
-  if (c.kind === "all" && c.of.length === 1) return labelOnly(c.of[0]);
-  if (c.kind === "label") return [c.id];
-  if (c.kind !== "any" || c.of.length === 0) return null;
-  const ids: number[] = [];
-  for (const leaf of c.of) {
-    if (leaf.kind !== "label") return null;
-    ids.push(leaf.id);
-  }
-  return ids;
+const routeId = (route: TabRoute) => Number(route.slice(route.indexOf(":") + 1));
+
+function splitOf(route: TabRoute | null, splits: SplitRule[] | undefined): SplitRule | undefined {
+  if (!route?.startsWith("split:")) return undefined;
+  const id = routeId(route);
+  return (splits ?? []).find((s) => s.id === id);
 }
 
-/** The labels that file mail into this split, when a drop can do it by hand:
- *  its own tab, no AI check, and a label-only condition. Mirrors `claim_of`. */
-export function splitDropLabels(rule: SplitRule): number[] | null {
-  if (rule.target != null || rule.ai) return null;
-  return labelOnly(rule.condition ?? queryToCondition(rule.query));
+/** The label tab (see `labelTabs.ts`) a route names: its split and what it
+ *  shows. Null for any other tab. */
+export function labelTab(
+  route: TabRoute | null,
+  splits: SplitRule[] | undefined,
+): { rule: SplitRule; anchor: TabAnchor } | null {
+  const rule = splitOf(route, splits);
+  const anchor = rule ? tabMatch(rule) : null;
+  return rule && anchor ? { rule, anchor } : null;
+}
+
+/** A view tab lists matching mail that stays where routing filed it. */
+export function isViewTab(route: TabRoute | null, splits: SplitRule[] | undefined): boolean {
+  return splitOf(route, splits)?.exclusive === false;
 }
 
 /** Whether dragged mail can be dropped onto this tab. Mirrors `droppable` in
@@ -49,31 +51,50 @@ export function canDropOnTab(
   labels: Label[] | undefined,
 ): boolean {
   if (route === "important" || route === "other") return true;
-  const id = Number(route.slice(route.indexOf(":") + 1));
-  if (route.startsWith("label:")) return (labels ?? []).some((l) => l.id === id && l.isAuto);
-  const rule = (splits ?? []).find((s) => s.id === id);
-  return rule != null && splitDropLabels(rule) != null;
+  if (route.startsWith("label:")) {
+    const id = routeId(route);
+    return (labels ?? []).some((l) => l.id === id && l.isAuto);
+  }
+  return labelTab(route, splits) != null;
 }
 
 /**
- * A thread's label ids as they will look once it moved to `to`, for the
- * optimistic list update (the backend's plan is exact; this only has to look
- * right until the refetch). Labels that file mail into other label tabs go,
- * the target tab's label is added; auto categories follow the route.
+ * A thread's labels and star once it moved from tab `from` to `to`, for the
+ * optimistic list update (the backend's `plan_move` is exact; this only has
+ * to look right until the refetch). Leaving the Starred tab unstars and
+ * leaving a view tab drops its label; the target's label or star is added.
+ * A view tab target changes nothing else. Otherwise labels that file mail
+ * into other exclusive label tabs go, and auto categories follow the route.
  */
-export function labelsAfterMove(
-  current: number[],
+export function threadAfterMove(
+  thread: { labels: number[]; isStarred: boolean },
   to: TabRoute,
+  from: TabRoute | null,
   splits: SplitRule[] | undefined,
   labels: Label[] | undefined,
-): number[] {
-  const autoIds = new Set((labels ?? []).filter((l) => l.isAuto).map((l) => l.id));
-  const tabLabels = new Set((splits ?? []).flatMap((s) => splitDropLabels(s) ?? []));
-  const id = Number(to.slice(to.indexOf(":") + 1));
-  const rule = to.startsWith("split:") ? (splits ?? []).find((s) => s.id === id) : undefined;
-  const keep = (rule && splitDropLabels(rule)) ?? [];
-  const next = current.filter((l) => !autoIds.has(l) && (!tabLabels.has(l) || keep.includes(l)));
-  if (keep.length > 0 && !next.some((l) => keep.includes(l))) next.push(keep[0]);
-  if (to.startsWith("label:")) next.push(id);
-  return next;
+): { labels: number[]; isStarred: boolean } {
+  const target = labelTab(to, splits);
+  const source = from === to ? null : labelTab(from, splits);
+  let next = thread.labels;
+  let isStarred = thread.isStarred;
+  if (source && !(target && sameAnchor(target.anchor, source.anchor))) {
+    const left = source.anchor;
+    if (left.kind === "starred") isStarred = false;
+    else if (source.rule.exclusive === false) next = next.filter((l) => l !== left.labelId);
+  }
+  const keep = target?.anchor.kind === "label" ? target.anchor.labelId : null;
+  if (target?.rule.exclusive !== false) {
+    const autoIds = new Set((labels ?? []).filter((l) => l.isAuto).map((l) => l.id));
+    const tabLabels = new Set(
+      (splits ?? []).flatMap((s) => {
+        const a = s.exclusive === false ? null : tabMatch(s);
+        return a?.kind === "label" ? [a.labelId] : [];
+      }),
+    );
+    next = next.filter((l) => !autoIds.has(l) && (!tabLabels.has(l) || l === keep));
+    if (to.startsWith("label:")) next = [...next, routeId(to)];
+  }
+  if (keep != null && !next.includes(keep)) next = [...next, keep];
+  if (target?.anchor.kind === "starred") isStarred = true;
+  return { labels: next, isStarred };
 }

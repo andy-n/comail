@@ -57,7 +57,8 @@ import {
   matches as conditionMatches,
   queryToCondition,
 } from "../lib/ruleCondition";
-import { canDropOnTab, labelsAfterMove, splitDropLabels, type TabRoute } from "../lib/tabDrop";
+import { tabMatch } from "../lib/labelTabs";
+import { canDropOnTab, labelTab, threadAfterMove, type TabRoute } from "../lib/tabDrop";
 
 export const MOCK_MODE =
   typeof window !== "undefined" &&
@@ -1065,6 +1066,16 @@ const splits: SplitRule[] = [
     position: 2,
     query: {},
     condition: { kind: "label", id: 4 },
+  },
+  // A view tab of starred mail: it stays in Important too, so a drop only
+  // stars it.
+  {
+    id: 4,
+    name: "Starred",
+    position: 3,
+    query: {},
+    condition: { kind: "isStarred", value: true },
+    exclusive: false,
   },
 ];
 
@@ -2135,37 +2146,55 @@ function performAction(args: PerformActionArgs): ActionResult {
   return { actionIds };
 }
 
-/** Drag-and-drop move into a tab. Simplified `route::manual::plan_move`: a
- *  matching sender/subject rule tab holds the thread, otherwise its labels
- *  follow the target (see `labelsAfterMove`) and the route is pinned. */
-function mockMoveThreads(ids: number[], to: TabRoute): MoveOutcome {
+/** Drag-and-drop move into a tab. A compact `route::manual::plan_move`: a
+ *  matching sender/subject rule tab holds the thread; otherwise labels and
+ *  star follow `threadAfterMove`, and the route is pinned unless the target
+ *  is a view tab. */
+function mockMoveThreads(ids: number[], to: TabRoute, from: TabRoute | null): MoveOutcome {
   if (!canDropOnTab(to, splits, labels)) {
     throw new Error(`tab ${to} doesn't take dropped mail`);
   }
-  const outcome: MoveOutcome = { moved: [], held: [], undo: { threads: [], senders: [] } };
+  const outcome: MoveOutcome = {
+    moved: [],
+    held: [],
+    undo: { threads: [], senders: [] },
+  };
+  const target = labelTab(to, splits);
+  const view = target?.rule.exclusive === false;
   for (const threadId of ids) {
     const t = threads.find((x) => x.id === threadId);
-    if (!t || t.routedTab === to) continue;
-    const holder = splits.find(
-      (s) =>
-        s.target == null &&
-        splitDropLabels(s) == null &&
-        `split:${s.id}` !== to &&
-        matchesSplitRule(t, s),
-    );
+    if (!t) continue;
+    const source = from ?? (t.routedTab as TabRoute | null);
+    const leaving = source !== to ? labelTab(source, splits) : null;
+    const there = target && view ? matchesSplitRule(t, target.rule) : t.routedTab === to;
+    if (there && !leaving) continue;
+    const holder = view
+      ? undefined
+      : splits.find(
+          (s) =>
+            s.exclusive !== false &&
+            s.target == null &&
+            tabMatch(s) == null &&
+            `split:${s.id}` !== to &&
+            matchesSplitRule(t, s),
+        );
     if (holder) {
       outcome.held.push({ threadId, splitId: holder.id });
       continue;
     }
-    const before = t.labels;
-    t.labels = labelsAfterMove(before, to, splits, labels);
+    const before = { labels: t.labels, isStarred: t.isStarred };
+    const after = threadAfterMove(before, to, leaving ? source : null, splits, labels);
     outcome.undo.threads.push({
       threadId,
       routedTab: t.routedTab,
-      addedLabels: t.labels.filter((l) => !before.includes(l)),
-      removedLabels: before.filter((l) => !t.labels.includes(l)),
+      addedLabels: after.labels.filter((l) => !before.labels.includes(l)),
+      removedLabels: before.labels.filter((l) => !after.labels.includes(l)),
+      starred: after.isStarred !== before.isStarred ? before.isStarred : undefined,
     });
-    t.routedTab = to;
+    t.labels = after.labels;
+    t.isStarred = after.isStarred;
+    // A view tab leaves the route alone.
+    if (!view) t.routedTab = to;
     outcome.moved.push(threadId);
   }
   return outcome;
@@ -3253,7 +3282,13 @@ export async function mockInvoke(
     }
 
     case "move_threads_to_tab":
-      return delay(mockMoveThreads(a.threadIds as number[], a.to as TabRoute));
+      return delay(
+        mockMoveThreads(
+          a.threadIds as number[],
+          a.to as TabRoute,
+          (a.from ?? null) as TabRoute | null,
+        ),
+      );
 
     case "undo_move_threads": {
       const undo = a.undo as MoveUndo;
@@ -3264,6 +3299,7 @@ export async function mockInvoke(
           ...t.labels.filter((l) => !u.addedLabels.includes(l)),
           ...u.removedLabels.filter((l) => !t.labels.includes(l)),
         ];
+        if (u.starred != null) t.isStarred = u.starred;
         t.routedTab = u.routedTab;
       }
       return delay(undefined);
