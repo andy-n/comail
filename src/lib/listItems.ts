@@ -10,7 +10,7 @@ export type BundleTab = {
   /** Color of the label that fills this tab, when there is one. */
   color?: string;
   /** A view tab (non-exclusive split): its threads stay in Important too, so
-   *  the inline list must not drop them as already bundled. */
+   *  the inline list only lifts them out while the bundle is expanded. */
   view?: boolean;
 };
 
@@ -32,7 +32,8 @@ export type Bundle = BundleTab & {
 export type ListItem =
   | { kind: "header"; key: string; label: string; subtitle?: string }
   | { kind: "bundle"; bundle: Bundle; expanded?: boolean }
-  | { kind: "thread"; thread: ThreadSummary; nested?: boolean }
+  /** `bundle`: the expanded bundle the thread is listed under. */
+  | { kind: "thread"; thread: ThreadSummary; bundle?: Bundle }
   | { kind: "bundleMore"; bundle: Bundle };
 
 /** A header to show directly above one thread (search result groups). */
@@ -46,16 +47,30 @@ type Entry = { at: number; bundle: Bundle } | { at: number; thread: ThreadSummar
 
 const newestAt = (b: Bundle) => b.threads[0]?.lastMessageAt ?? 0;
 
-/** Threads and bundles in one newest-first sequence. Threads that belong to a
- *  bundle are dropped from `threads`: an expanded bundle lists them under its
- *  own row, and a collapsed one must not leak them while the list catches up. */
-function inlineTimeline(threads: ThreadSummary[], bundles: Bundle[]): Entry[] {
+/** Threads and bundles in one newest-first sequence. A thread a bundle shows
+ *  is never also a top-level row: bundles that take mail out of Important
+ *  always drop theirs (an expanded one lists them under its own row, a
+ *  collapsed one must not leak them while the list catches up), and an
+ *  expanded view-tab bundle moves its threads under it while open. */
+function inlineTimeline(
+  threads: ThreadSummary[],
+  bundles: Bundle[],
+  expanded: ReadonlySet<string>,
+): Entry[] {
   const nested = bundledThreadIds(bundles);
+  for (const b of bundles) {
+    if (b.view && expanded.has(b.key)) for (const th of b.threads) nested.add(th.id);
+  }
   const queue = bundles.filter((b) => b.threads.length > 0).sort((a, b) => newestAt(b) - newestAt(a));
+  // Newest first even when `threads` is the inline order of a previous
+  // render (an expanded bundle's older threads in the middle), so date
+  // groups never repeat.
+  const top = threads
+    .filter((th) => !nested.has(th.id))
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
   const out: Entry[] = [];
   let next = 0;
-  for (const thread of threads) {
-    if (nested.has(thread.id)) continue;
+  for (const thread of top) {
     while (next < queue.length && newestAt(queue[next]) >= thread.lastMessageAt) {
       out.push({ at: newestAt(queue[next]), bundle: queue[next++] });
     }
@@ -71,15 +86,15 @@ export function bundledThreadIds(bundles: Bundle[]): Set<number> {
   return new Set(bundles.filter((b) => !b.view).flatMap((b) => b.threads.map((th) => th.id)));
 }
 
-/** Thread order of the inline-bundled list (what J/K walks): each expanded
- *  bundle's threads sit right after the threads newer than the bundle. */
+/** Thread order of the inline-bundled list (what J/K walks): exactly the
+ *  thread rows `buildListItems` renders, each id once. */
 export function inlineThreadOrder(
   threads: ThreadSummary[],
   bundles: Bundle[],
   expanded: ReadonlySet<string>,
 ): ThreadSummary[] {
-  return inlineTimeline(threads, bundles).flatMap((e) =>
-    "thread" in e ? [e.thread] : expanded.has(e.bundle.key) ? e.bundle.threads : [],
+  return buildInlineItems(threads, false, bundles, 0, expanded).flatMap((it) =>
+    it.kind === "thread" ? [it.thread] : [],
   );
 }
 
@@ -125,7 +140,10 @@ function buildInlineItems(
 ): ListItem[] {
   const items: ListItem[] = [];
   let lastKey: string | null = null;
-  for (const entry of inlineTimeline(threads, bundles)) {
+  // Bundles can share a thread (a view tab and the tab filing it): it is
+  // listed under the first one expanded.
+  const listed = new Set<number>();
+  for (const entry of inlineTimeline(threads, bundles, expanded)) {
     if (grouped) lastKey = pushDateHeader(items, entry.at, lastKey, now);
     if ("thread" in entry) {
       items.push({ kind: "thread", thread: entry.thread });
@@ -135,7 +153,11 @@ function buildInlineItems(
     const open = expanded.has(bundle.key);
     items.push({ kind: "bundle", bundle, expanded: open });
     if (!open) continue;
-    for (const thread of bundle.threads) items.push({ kind: "thread", thread, nested: true });
+    for (const thread of bundle.threads) {
+      if (listed.has(thread.id)) continue;
+      listed.add(thread.id);
+      items.push({ kind: "thread", thread, bundle });
+    }
     if (bundle.hasMore) items.push({ kind: "bundleMore", bundle });
   }
   return items;

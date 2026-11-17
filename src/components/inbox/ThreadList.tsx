@@ -173,10 +173,8 @@ export function ThreadList({
   dragSourceRef.current = dragSource;
   const nestedBundle = useMemo(
     () =>
-      new Map(
-        inlineBundles && bundles ? bundles.flatMap((b) => b.threads.map((th) => [th.id, b] as const)) : [],
-      ),
-    [inlineBundles, bundles],
+      new Map(items.flatMap((it) => (it.kind === "thread" && it.bundle ? [[it.thread.id, it.bundle] as const] : []))),
+    [items],
   );
   const nestedTabRef = useRef<ReadonlyMap<number, TabRoute | null>>(new Map());
   nestedTabRef.current = useMemo(
@@ -541,8 +539,8 @@ export function ThreadList({
             return (
               <div
                 key={th.id}
-                {...(item.nested ? bundleDrop(nestedBundle.get(th.id)) : undefined)}
-                className={`absolute inset-x-0${item.nested ? " ps-8" : ""}${shifting ? " co-row-shift" : ""}`}
+                {...bundleDrop(item.bundle)}
+                className={`absolute inset-x-0${item.bundle ? " ps-8" : ""}${shifting ? " co-row-shift" : ""}`}
                 style={style}
               >
                 <ThreadRow

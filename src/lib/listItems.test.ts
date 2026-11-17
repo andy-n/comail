@@ -34,7 +34,7 @@ const shape = (items: ListItem[]) =>
     if (it.kind === "header") return `h:${it.key}`;
     if (it.kind === "bundle") return `b:${it.bundle.key}${it.expanded ? "+" : ""}`;
     if (it.kind === "bundleMore") return `more:${it.bundle.key}`;
-    return `${it.nested ? "n" : "t"}:${it.thread.id}`;
+    return `${it.bundle ? "n" : "t"}:${it.thread.id}`;
   });
 
 describe("buildListItems", () => {
@@ -147,5 +147,45 @@ describe("inline bundles", () => {
       );
     expect(ids(view)).toEqual([1, 2]);
     expect(ids(bundle("x", [starred]))).toEqual([2]);
+  });
+
+  it("moves an expanded view tab's threads under it, each thread listed once", () => {
+    const starred = thread(1, NOW - HOUR);
+    const filed = thread(10, NOW - 2 * HOUR);
+    // A thread both view tabs show, and one another (exclusive) bundle holds.
+    const view = { ...bundle("v", [starred, filed]), view: true };
+    const other = { ...bundle("w", [starred]), view: true };
+    const tab = bundle("x", [filed]);
+    const bundles = [view, other, tab];
+    const important = [starred, thread(2, NOW - 3 * HOUR)];
+    const expanded = new Set(["v", "w", "x"]);
+    const rows = inlineThreadOrder(important, bundles, expanded);
+    const items = buildListItems(rows, false, bundles, NOW, undefined, { expanded });
+    const shown = items.flatMap((it) => (it.kind === "thread" ? [it.thread.id] : []));
+    expect(shape(items)).toEqual(["b:v+", "n:1", "n:10", "b:w+", "b:x+", "t:2"]);
+    expect(rows.map((t) => t.id)).toEqual(shown);
+    expect(new Set(shown).size).toBe(shown.length);
+
+    // Collapsed, the view tab's thread is a plain row again.
+    const none = new Set<string>();
+    const collapsedRows = inlineThreadOrder(important, bundles, none);
+    expect(collapsedRows.map((t) => t.id)).toEqual([1, 2]);
+    expect(
+      buildListItems(collapsedRows, false, bundles, NOW, undefined, { expanded: none }).flatMap((it) =>
+        it.kind === "thread" ? [it.thread.id] : [],
+      ),
+    ).toEqual([1, 2]);
+  });
+
+  it("keeps date groups in order when collapsing from the expanded order", () => {
+    const starred = thread(1, NOW - HOUR);
+    const older = thread(30, NOW - 30 * HOUR);
+    const view = { ...bundle("v", [starred, older]), view: true };
+    const important = [starred, thread(2, NOW - 3 * HOUR), older];
+    // The list renders once with the rows of the expanded state.
+    const rows = inlineThreadOrder(important, [view], new Set(["v"]));
+    expect(rows.map((t) => t.id)).toEqual([1, 30, 2]);
+    const items = buildListItems(rows, true, [view], NOW, undefined, { expanded: new Set() });
+    expect(shape(items)).toEqual(["h:today", "b:v", "t:1", "t:2", "h:yesterday", "t:30"]);
   });
 });
