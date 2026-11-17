@@ -12,7 +12,7 @@ import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
 import { primaryCorrespondent } from "../../lib/format";
 import { buildListItems, bundledThreadIds, type Bundle, type SectionHeader } from "../../lib/listItems";
-import { prefetchThread } from "../../queries/hooks";
+import { prefetchThread, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { Button } from "../ui/Button";
 import { BundleRow } from "./BundleRow";
@@ -88,6 +88,8 @@ export function ThreadList({
   const selectThread = useUi((s) => s.selectThread);
   const openThread = useUi((s) => s.openThread);
   const toggleSelect = useUi((s) => s.toggleSelect);
+  const { data: settings } = useSettings();
+  const showLabelChips = settings?.showLabelChips !== false;
 
   // Brief leave animation: keep removed rows for 150ms, action already committed.
   const [rows, setRows] = useState<ThreadSummary[]>(threads);
@@ -483,6 +485,7 @@ export function ThreadList({
                   jumpHint={jumpNumbers?.get(th.id)}
                   avatarUi={avatarUi}
                   photos={photos}
+                  showLabelChips={showLabelChips}
                 />
               </div>
             );

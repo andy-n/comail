@@ -482,6 +482,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         showSenderPhotos: true,
         showBundles: true,
         inlineBundles: false,
+        showLabelChips: true,
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",

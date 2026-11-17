@@ -479,6 +479,8 @@ export interface Settings {
   /** Avatar inbox UI: bundles sit among Important mail by their newest message
    *  and open in place; the tab bar is hidden on Important. */
   inlineBundles: boolean;
+  /** Show user-label chips before the subject in thread rows (both layouts). */
+  showLabelChips: boolean;
   undoSendSeconds: number;
   loadRemoteImages: boolean;
   aiBaseUrl: string;

@@ -91,6 +91,7 @@ const DEFAULT_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   inlineBundles: false,
+  showLabelChips: true,
   undoSendSeconds: 10,
   loadRemoteImages: false,
   aiBaseUrl: "",
@@ -801,6 +802,16 @@ export function SettingsPanel() {
                 />
               </SettingRow>
             )}
+            <SettingRow
+              label={t("settings:showLabelChips.label")}
+              hint={t("settings:showLabelChips.hint")}
+            >
+              <Toggle
+                label={t("settings:showLabelChips.label")}
+                checked={s.showLabelChips}
+                onChange={(showLabelChips) => void updateSettings({ showLabelChips })}
+              />
+            </SettingRow>
             <SettingRow
               label={t("settings:groupByDate.label")}
               hint={t("settings:groupByDate.hint")}

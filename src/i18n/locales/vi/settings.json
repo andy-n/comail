@@ -572,6 +572,10 @@
     "label": "Xếp các nhóm vào danh sách",
     "hint": "Đặt mỗi nhóm giữa các thư Quan trọng theo thư mới nhất của nhóm và mở ngay tại chỗ, thay vì ghim các nhóm ở trên cùng. Ẩn thanh tab ở Quan trọng."
   },
+  "showLabelChips": {
+    "label": "Hiện nhãn trong danh sách",
+    "hint": "Hiện nhãn của mỗi cuộc hội thoại trước tiêu đề. Các nhóm và tab nhãn đã cho biết nhãn, nên bạn có thể tắt để danh sách gọn hơn."
+  },
   "groupByDate": {
     "label": "Nhóm theo ngày",
     "hint": "Hiển thị tiêu đề Hôm nay / Hôm qua / … giữa các cuộc hội thoại trong danh sách."

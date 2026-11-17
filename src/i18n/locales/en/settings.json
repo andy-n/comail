@@ -574,6 +574,10 @@
     "label": "Mix bundles into the list",
     "hint": "Place each bundle among your Important mail by its newest message and open it in place, instead of pinning bundles on top. Hides the tab bar on Important."
   },
+  "showLabelChips": {
+    "label": "Show label chips",
+    "hint": "Show each conversation's labels before its subject. Bundles and label tabs already name the label, so turn this off for a calmer list."
+  },
   "groupByDate": {
     "label": "Group by date",
     "hint": "Show Today / Yesterday / … headers between conversations in the list."
