@@ -4,22 +4,24 @@
 //! replaying the same first-match-wins evaluation routing uses
 //! ([`super::decide`]) on a simulated copy of the thread. `Core` executes the
 //! steps through the normal label and star actions (IMAP keyword / `\Flagged`
-//! sync, reroute).
+//! sync, reroute) and saves condition edits the way `save_split` does.
 //!
-//! Only label tabs ([`tab_match`]: one user label or starred mail) take
-//! dropped mail. On a drop:
-//! - the target gets its label (or the star);
+//! Only label tabs ([`tab_match`]: one user label or starred mail, plus
+//! learned senders) take dropped mail. On a drop:
+//! - the target gets its label (or the star) and learns the thread's sender
+//!   ([`learn_sender`]); a source label tab learns it out ([`exclude_sender`]);
 //! - leaving the Starred tab unstars, leaving a view tab (`exclusive == false`)
 //!   takes that tab's label; an exclusive source tab is left by the replay;
 //! - a view tab target only adds: the thread stays where routing put it, with
 //!   its other labels;
 //! - otherwise the replay makes every routing split ahead of the target let
-//!   go: label tabs lose their label. A rule a drop can't undo (a sender or
-//!   subject rule, an AI split that said yes) yields [`MovePlan::HeldBy`].
+//!   go: label tabs lose their label, or learn the sender out when that isn't
+//!   enough. A rule a drop can't undo (a sender or subject rule, an AI split
+//!   that said yes) yields [`MovePlan::HeldBy`].
 
 use super::decide::{RuleSubject, gate};
-use super::tab::{TabAnchor, tab_match};
-use crate::models::{RouteKey, SplitRule};
+use super::tab::{TabAnchor, exclude_sender, learn_sender, normalize_sender, tab_match};
+use crate::models::{RouteKey, RuleCondition, SplitRule};
 use serde::{Deserialize, Serialize};
 
 /// Whether mail can be dropped onto the tab `to` at all. Mirrors the UI's
@@ -61,6 +63,12 @@ pub struct MoveFacts<'a> {
 /// One change that moves a thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveStep {
+    /// Save a split's condition with a sender learned into or out of it.
+    /// Planned ahead of the thread's own changes.
+    SetCondition {
+        split_id: i64,
+        condition: RuleCondition,
+    },
     AddLabel(i64),
     RemoveLabel(i64),
     /// Star (`true`) or unstar the thread.
@@ -90,6 +98,47 @@ pub enum MovePlan {
 /// The target tab doesn't take dropped mail (e.g. a sender rule's tab).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotDroppable;
+
+/// Split conditions a plan edits, over the splits it was given.
+#[derive(Default)]
+struct Edits {
+    rules: Vec<SplitRule>,
+}
+
+impl Edits {
+    /// `sp` with this plan's edits.
+    fn rule<'a>(&'a self, sp: &'a SplitRule) -> &'a SplitRule {
+        self.rules.iter().find(|r| r.id == sp.id).unwrap_or(sp)
+    }
+
+    fn edit(&mut self, sp: &SplitRule, f: impl FnOnce(&RuleCondition) -> Option<RuleCondition>) {
+        let current = self.rule(sp).effective_condition();
+        let Some(next) = f(&current).filter(|c| *c != current) else {
+            return;
+        };
+        match self.rules.iter_mut().find(|r| r.id == sp.id) {
+            Some(r) => r.condition = Some(next),
+            None => self.rules.push(SplitRule {
+                condition: Some(next),
+                ..sp.clone()
+            }),
+        }
+    }
+
+    /// The condition saves, in first-edit order, ahead of `steps`.
+    fn into_steps(self, steps: Vec<MoveStep>) -> Vec<MoveStep> {
+        self.rules
+            .into_iter()
+            .filter_map(|r| {
+                r.condition.map(|condition| MoveStep::SetCondition {
+                    split_id: r.id,
+                    condition,
+                })
+            })
+            .chain(steps)
+            .collect()
+    }
+}
 
 /// Take a tab's anchor off the simulated thread.
 fn release(anchor: TabAnchor, sim: &mut RuleSubject, steps: &mut Vec<MoveStep>) {
@@ -128,6 +177,9 @@ pub fn plan_move(
         RouteKey::Split(id) => Some(find(id).and_then(label_tab).ok_or(NotDroppable)?),
         _ => None,
     };
+    let sender = facts.sender.map(normalize_sender).filter(|s| !s.is_empty());
+    // Drops onto a label tab teach it (and the source tab) the sender.
+    let learn = target.and(sender.as_deref());
     // The other label tab the thread is dragged out of.
     let source = facts
         .from
@@ -150,6 +202,7 @@ pub fn plan_move(
 
     let mut sim = facts.subject.clone();
     let mut steps = Vec::new();
+    let mut edits = Edits::default();
 
     // Leaving the Starred tab unstars; leaving a view tab drops its label (an
     // exclusive tab's label is the replay's to take).
@@ -159,9 +212,9 @@ pub fn plan_move(
         }
     }
 
-    // Join the target: its label or star.
+    // Join the target: its label or star, and the sender learned in.
     let mut keep = None;
-    if let Some((_, anchor)) = target {
+    if let Some((rule, anchor)) = target {
         match anchor {
             TabAnchor::Label(l) => {
                 keep = Some(l);
@@ -176,6 +229,9 @@ pub fn plan_move(
                 }
             }
         }
+        if let Some(s) = learn {
+            edits.edit(rule, |c| learn_sender(c, s));
+        }
     }
 
     // A view tab lists the thread wherever routing has it: nothing to replay.
@@ -187,13 +243,13 @@ pub fn plan_move(
         for sp in splits.iter().filter(|s| s.exclusive) {
             if sp.route_key() == to {
                 // The target itself, or a rule already routing into the target.
-                by_rule = gate(sp, &sim) && sp.ai.is_none();
+                by_rule = gate(edits.rule(sp), &sim) && sp.ai.is_none();
                 if matches!(to, RouteKey::Split(_)) || by_rule {
                     break;
                 }
                 continue;
             }
-            if !gate(sp, &sim) {
+            if !gate(edits.rule(sp), &sim) {
                 continue;
             }
             // An AI split only holds the thread if it already said yes.
@@ -210,14 +266,24 @@ pub fn plan_move(
                     steps.push(MoveStep::RemoveLabel(l));
                 }
             }
-            if gate(sp, &sim) {
-                // Still claimed (the target's own label, a star).
-                return Ok(MovePlan::HeldBy(sp.id));
+            if gate(edits.rule(sp), &sim) {
+                // Still claimed (a learned sender, the target's own label, a
+                // star): learn the sender out of it.
+                let Some(s) = sender.as_deref() else {
+                    return Ok(MovePlan::HeldBy(sp.id));
+                };
+                edits.edit(sp, |c| exclude_sender(c, s));
+                if gate(edits.rule(sp), &sim) {
+                    return Ok(MovePlan::HeldBy(sp.id));
+                }
             }
         }
     }
+    if let (Some((rule, _)), Some(s)) = (leaving, learn) {
+        edits.edit(rule, |c| exclude_sender(c, s));
+    }
     if view {
-        return Ok(MovePlan::Steps(steps));
+        return Ok(MovePlan::Steps(edits.into_steps(steps)));
     }
 
     // Write the route as well: the replay above shows the rules now agree (or
@@ -227,7 +293,7 @@ pub fn plan_move(
         steps.push(MoveStep::Route(to));
     }
     if matches!(to, RouteKey::Split(_)) || by_rule {
-        return Ok(MovePlan::Steps(steps));
+        return Ok(MovePlan::Steps(edits.into_steps(steps)));
     }
     let keyword = match to {
         RouteKey::Label(id) => categories
@@ -251,7 +317,7 @@ pub fn plan_move(
             keyword,
         });
     }
-    Ok(MovePlan::Steps(steps))
+    Ok(MovePlan::Steps(edits.into_steps(steps)))
 }
 
 /// Result of a manual move, with what it takes to put everything back.
@@ -272,13 +338,20 @@ pub struct HeldThread {
     pub split_id: i64,
 }
 
-/// Inverse of a move: labels and stars to take back, routes and sender
-/// verdicts to restore.
+/// Inverse of a move: labels and stars to take back, routes, sender verdicts
+/// and split conditions to restore.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveUndo {
     pub threads: Vec<ThreadUndo>,
     pub senders: Vec<SenderUndo>,
+    /// Split conditions as they were before senders were learned into them.
+    #[serde(default)]
+    pub conditions: Vec<ConditionUndo>,
+    /// The senders learned: their other inbox mail is re-checked against the
+    /// rules after the move and after its undo.
+    #[serde(default)]
+    pub learned: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,10 +375,19 @@ pub struct SenderUndo {
     pub keyword: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConditionUndo {
+    pub split_id: i64,
+    /// `None` = the split used its legacy query.
+    pub condition: Option<RuleCondition>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AiCheck, RuleCondition, SplitRuleQuery, TextOp};
+    use crate::models::{AiCheck, SplitRuleQuery, TextOp};
+    use serde_json::json;
 
     const ANN: &str = "ann@shop.example";
 
@@ -422,9 +504,53 @@ mod tests {
         }
     }
 
-    /// The thread's own changes.
+    /// The thread's own changes, without the learned-sender condition saves.
     fn moves(p: Result<MovePlan, NotDroppable>) -> Vec<MoveStep> {
         steps(p)
+            .into_iter()
+            .filter(|s| !matches!(s, MoveStep::SetCondition { .. }))
+            .collect()
+    }
+
+    /// The condition saves, as `(split id, condition JSON)`.
+    fn saves(p: &Result<MovePlan, NotDroppable>) -> Vec<(i64, serde_json::Value)> {
+        let Ok(MovePlan::Steps(s)) = p else {
+            panic!("expected steps, got {p:?}");
+        };
+        s.iter()
+            .filter_map(|s| match s {
+                MoveStep::SetCondition {
+                    split_id,
+                    condition,
+                } => Some((*split_id, serde_json::to_value(condition).unwrap())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn ann() -> serde_json::Value {
+        json!({ "kind": "sender", "op": "equals", "value": ANN })
+    }
+
+    /// `anchor` with ANN learned in.
+    fn learned_in(anchor: serde_json::Value) -> serde_json::Value {
+        json!({ "kind": "any", "of": [anchor, ann()] })
+    }
+
+    /// `anchor` with ANN learned out.
+    fn learned_out(anchor: serde_json::Value) -> serde_json::Value {
+        json!({ "kind": "all", "of": [
+            { "kind": "any", "of": [anchor] },
+            { "kind": "not", "cond": { "kind": "any", "of": [ann()] } },
+        ] })
+    }
+
+    fn label_json(id: i64) -> serde_json::Value {
+        json!({ "kind": "label", "id": id })
+    }
+
+    fn starred_json() -> serde_json::Value {
+        json!({ "kind": "isStarred", "value": true })
     }
 
     #[test]
@@ -525,6 +651,40 @@ mod tests {
     }
 
     #[test]
+    fn a_drop_learns_the_sender_into_the_target_and_out_of_the_source() {
+        let splits = [rule(1, label(10)), rule(2, label(20))];
+        let p = plan(RouteKey::Split(2), &[10], Some("split:1"), &splits);
+        assert_eq!(
+            saves(&p),
+            vec![
+                (2, learned_in(label_json(20))),
+                (1, learned_out(label_json(10))),
+            ]
+        );
+        assert_eq!(
+            moves(p),
+            vec![
+                MoveStep::AddLabel(20),
+                MoveStep::RemoveLabel(10),
+                MoveStep::Route(RouteKey::Split(2)),
+            ]
+        );
+        // Learned already: nothing to save again.
+        let splits = [rule(
+            2,
+            serde_json::from_value(learned_in(label_json(20))).unwrap(),
+        )];
+        assert_eq!(
+            steps(plan(RouteKey::Split(2), &[], None, &splits)),
+            vec![MoveStep::AddLabel(20), MoveStep::Route(RouteKey::Split(2))]
+        );
+        // Categories and Important learn nothing.
+        let splits = [rule(1, label(10))];
+        assert!(saves(&plan(RouteKey::Label(101), &[10], Some("split:1"), &splits)).is_empty());
+        assert!(saves(&plan(RouteKey::Important, &[10], Some("split:1"), &splits)).is_empty());
+    }
+
+    #[test]
     fn a_view_tab_drop_adds_the_label_and_keeps_the_route() {
         let splits = [rule(1, label(10)), view(5, label(50))];
         let from_important = Drag {
@@ -534,11 +694,19 @@ mod tests {
             ..Drag::default()
         };
         let p = drag(RouteKey::Split(5), from_important, &splits);
+        assert_eq!(saves(&p), vec![(5, learned_in(label_json(50)))]);
         // No route, and label 77 stays.
         assert_eq!(moves(p), vec![MoveStep::AddLabel(50)]);
 
-        // From an exclusive tab: its label stays.
+        // From an exclusive tab: its label stays, the learned exclude moves it.
         let p = plan(RouteKey::Split(5), &[10], Some("split:1"), &splits);
+        assert_eq!(
+            saves(&p),
+            vec![
+                (5, learned_in(label_json(50))),
+                (1, learned_out(label_json(10))),
+            ]
+        );
         assert_eq!(moves(p), vec![MoveStep::AddLabel(50)]);
 
         // Already listed there.
@@ -563,6 +731,13 @@ mod tests {
         );
         let p = drag(RouteKey::Split(1), out_of_view(), &splits);
         assert_eq!(
+            saves(&p),
+            vec![
+                (1, learned_in(label_json(10))),
+                (5, learned_out(label_json(50))),
+            ]
+        );
+        assert_eq!(
             moves(p),
             vec![
                 MoveStep::RemoveLabel(50),
@@ -583,6 +758,7 @@ mod tests {
             },
             &splits,
         );
+        assert_eq!(saves(&p), vec![(6, learned_in(starred_json()))]);
         assert_eq!(moves(p), vec![MoveStep::Star(true)]);
 
         let starred_in = |from| Drag {
@@ -592,6 +768,13 @@ mod tests {
             ..Drag::default()
         };
         let p = drag(RouteKey::Split(2), starred_in(RouteKey::Split(6)), &splits);
+        assert_eq!(
+            saves(&p),
+            vec![
+                (2, learned_in(label_json(20))),
+                (6, learned_out(starred_json())),
+            ]
+        );
         assert_eq!(
             moves(p),
             vec![
@@ -632,6 +815,41 @@ mod tests {
                 MoveStep::AddLabel(20),
                 MoveStep::Route(RouteKey::Split(2)),
             ]
+        );
+    }
+
+    #[test]
+    fn a_learned_sender_holding_the_thread_is_learned_out() {
+        let holder = rule(
+            1,
+            serde_json::from_value(learned_in(label_json(10))).unwrap(),
+        );
+        let splits = [holder, rule(2, label(20))];
+        let p = plan(RouteKey::Split(2), &[], Some("split:1"), &splits);
+        assert_eq!(
+            saves(&p),
+            vec![
+                (2, learned_in(label_json(20))),
+                (1, learned_out(label_json(10))),
+            ]
+        );
+        assert_eq!(
+            moves(p),
+            vec![MoveStep::AddLabel(20), MoveStep::Route(RouteKey::Split(2))]
+        );
+        // Important learns nothing, but the holder still has to let go.
+        let p = plan(RouteKey::Important, &[], Some("split:1"), &splits);
+        assert_eq!(saves(&p), vec![(1, learned_out(label_json(10)))]);
+        assert_eq!(moves(p), vec![MoveStep::Route(RouteKey::Important)]);
+        // Without a sender to learn, it holds.
+        let anon = Drag {
+            routed: Some("split:1"),
+            anon: true,
+            ..Drag::default()
+        };
+        assert_eq!(
+            drag(RouteKey::Split(2), anon, &splits),
+            Ok(MovePlan::HeldBy(1))
         );
     }
 
@@ -699,6 +917,16 @@ mod tests {
         assert_eq!(
             plan(RouteKey::Split(2), &[], None, &splits),
             Ok(MovePlan::HeldBy(1))
+        );
+        // An earlier tab of the same label learns the sender out instead.
+        let splits = [rule(1, label(20)), rule(2, label(20))];
+        let p = plan(RouteKey::Split(2), &[], None, &splits);
+        assert_eq!(
+            saves(&p),
+            vec![
+                (2, learned_in(label_json(20))),
+                (1, learned_out(label_json(20))),
+            ]
         );
     }
 

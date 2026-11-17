@@ -57,7 +57,7 @@ import {
   matches as conditionMatches,
   queryToCondition,
 } from "../lib/ruleCondition";
-import { tabMatch } from "../lib/labelTabs";
+import { excludeSender, learnSender, normalizeSender, tabMatch } from "../lib/labelTabs";
 import { canDropOnTab, labelTab, threadAfterMove, type TabRoute } from "../lib/tabDrop";
 
 export const MOCK_MODE =
@@ -2148,8 +2148,9 @@ function performAction(args: PerformActionArgs): ActionResult {
 
 /** Drag-and-drop move into a tab. A compact `route::manual::plan_move`: a
  *  matching sender/subject rule tab holds the thread; otherwise labels and
- *  star follow `threadAfterMove`, and the route is pinned unless the target
- *  is a view tab. */
+ *  star follow `threadAfterMove`, a label tab learns the sender (and the tab
+ *  it came from learns it out), and the route is pinned unless the target is
+ *  a view tab. */
 function mockMoveThreads(ids: number[], to: TabRoute, from: TabRoute | null): MoveOutcome {
   if (!canDropOnTab(to, splits, labels)) {
     throw new Error(`tab ${to} doesn't take dropped mail`);
@@ -2157,10 +2158,18 @@ function mockMoveThreads(ids: number[], to: TabRoute, from: TabRoute | null): Mo
   const outcome: MoveOutcome = {
     moved: [],
     held: [],
-    undo: { threads: [], senders: [] },
+    undo: { threads: [], senders: [], conditions: [], learned: [] },
   };
   const target = labelTab(to, splits);
   const view = target?.rule.exclusive === false;
+  const learn = (rule: SplitRule, next: RuleCondition | null): boolean => {
+    if (!next || JSON.stringify(next) === JSON.stringify(rule.condition)) return false;
+    if (!outcome.undo.conditions.some((c) => c.splitId === rule.id)) {
+      outcome.undo.conditions.push({ splitId: rule.id, condition: rule.condition ?? null });
+    }
+    rule.condition = next;
+    return true;
+  };
   for (const threadId of ids) {
     const t = threads.find((x) => x.id === threadId);
     if (!t) continue;
@@ -2182,6 +2191,17 @@ function mockMoveThreads(ids: number[], to: TabRoute, from: TabRoute | null): Mo
       outcome.held.push({ threadId, splitId: holder.id });
       continue;
     }
+    if (target) {
+      const email = normalizeSender(threadSender(t).email);
+      const { rule } = target;
+      let learned = learn(rule, learnSender(rule.condition ?? queryToCondition(rule.query), email));
+      if (leaving) {
+        const left = leaving.rule;
+        const out = excludeSender(left.condition ?? queryToCondition(left.query), email);
+        learned = learn(left, out) || learned;
+      }
+      if (learned && !outcome.undo.learned.includes(email)) outcome.undo.learned.push(email);
+    }
     const before = { labels: t.labels, isStarred: t.isStarred };
     const after = threadAfterMove(before, to, leaving ? source : null, splits, labels);
     outcome.undo.threads.push({
@@ -2193,8 +2213,10 @@ function mockMoveThreads(ids: number[], to: TabRoute, from: TabRoute | null): Mo
     });
     t.labels = after.labels;
     t.isStarred = after.isStarred;
-    // A view tab leaves the route alone.
+    // A view tab leaves the route alone, unless the thread was dragged out of
+    // the exclusive tab holding it (the learned exclude lets it go).
     if (!view) t.routedTab = to;
+    else if (leaving && t.routedTab === source) t.routedTab = null;
     outcome.moved.push(threadId);
   }
   return outcome;
@@ -3292,6 +3314,10 @@ export async function mockInvoke(
 
     case "undo_move_threads": {
       const undo = a.undo as MoveUndo;
+      for (const c of undo.conditions) {
+        const rule = splits.find((s) => s.id === c.splitId);
+        if (rule) rule.condition = c.condition;
+      }
       for (const u of undo.threads) {
         const t = threads.find((x) => x.id === u.threadId);
         if (!t) continue;

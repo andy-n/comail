@@ -1,11 +1,12 @@
 //! `apply_tab_move` / `revert_tab_move` against a real schema: label and star
-//! actions are queued for IMAP, routes and sender verdicts are written, undo
-//! restores.
+//! actions are queued for IMAP, routes, sender verdicts and learned senders
+//! are written, undo restores.
 
 use super::*;
 use crate::db::testutil;
 use crate::models::{RouteKey, RuleCondition, SplitRuleQuery, TextOp};
 use rusqlite::{Connection, params};
+use serde_json::json;
 
 struct Fixture {
     conn: Connection,
@@ -152,11 +153,23 @@ fn cached(c: &Connection, key: &str) -> Option<String> {
     .unwrap()
 }
 
+/// A split's stored condition as JSON.
+fn condition(c: &Connection, split_id: i64) -> serde_json::Value {
+    let rule = repo::splits::get(c, split_id).unwrap().unwrap();
+    serde_json::to_value(rule.condition).unwrap()
+}
+
+fn sender(email: &str) -> serde_json::Value {
+    json!({ "kind": "sender", "op": "equals", "value": email })
+}
+
 #[test]
-fn moving_between_label_tabs_swaps_the_labels_through_imap_actions() {
+fn moving_between_label_tabs_swaps_the_labels_and_learns_the_sender() {
     let mut f = fixture();
     let finance_key = format!("split:{}", f.finance_tab);
     let t = thread(&f.conn, "Bank@Acme.test", &[f.finance], Some(&finance_key));
+    // More mail from the same sender, still in Important.
+    let later = thread(&f.conn, "bank@acme.test", &[], Some("important"));
 
     let (out, accounts) =
         apply_tab_move(&mut f.conn, &[t], RouteKey::Split(f.travel_tab), None).unwrap();
@@ -171,10 +184,52 @@ fn moving_between_label_tabs_swaps_the_labels_through_imap_actions() {
             action("remove_label", Some("Finance")),
         ]
     );
+    // Learned into Travel, out of Finance.
+    assert_eq!(
+        condition(&f.conn, f.travel_tab),
+        json!({ "kind": "any", "of": [
+            { "kind": "label", "id": f.travel },
+            sender("bank@acme.test"),
+        ] })
+    );
+    assert_eq!(
+        condition(&f.conn, f.finance_tab),
+        json!({ "kind": "all", "of": [
+            { "kind": "any", "of": [{ "kind": "label", "id": f.finance }] },
+            { "kind": "not", "cond": { "kind": "any", "of": [sender("bank@acme.test")] } },
+        ] })
+    );
+    assert_eq!(out.undo.learned, vec!["bank@acme.test".to_string()]);
+
+    // The background pass files the sender's other mail into Travel too.
+    let skip = out.undo.threads.iter().map(|u| u.thread_id).collect();
+    assert_eq!(
+        reroute_senders(&mut f.conn, &out.undo.learned, &skip).unwrap(),
+        vec![later]
+    );
+    assert_eq!(
+        routed(&f.conn, later),
+        Some(format!("split:{}", f.travel_tab))
+    );
+
     let (touched, _) = revert_tab_move(&mut f.conn, &out.undo).unwrap();
     assert_eq!(touched, vec![t]);
     assert_eq!(labels_of(&f.conn, t), vec![f.finance]);
     assert_eq!(routed(&f.conn, t), Some(finance_key));
+    assert_eq!(
+        condition(&f.conn, f.travel_tab),
+        json!({ "kind": "label", "id": f.travel })
+    );
+    assert_eq!(
+        condition(&f.conn, f.finance_tab),
+        json!({ "kind": "label", "id": f.finance })
+    );
+    // ... and after the undo, the same pass takes that mail back out.
+    reroute_senders(&mut f.conn, &out.undo.learned, &skip).unwrap();
+    assert_ne!(
+        routed(&f.conn, later),
+        Some(format!("split:{}", f.travel_tab))
+    );
 }
 
 #[test]
@@ -195,8 +250,9 @@ fn moving_into_a_category_routes_and_teaches_the_sender() {
         cached(&f.conn, "acme.test").as_deref(),
         Some("ComailAutoMarketing")
     );
-    // Categories are local-only: nothing goes to IMAP.
+    // Categories are local-only: nothing goes to IMAP, and no tab learns.
     assert!(queued(&f.conn, t).is_empty());
+    assert!(out.undo.conditions.is_empty());
 
     revert_tab_move(&mut f.conn, &out.undo).unwrap();
     assert_eq!(routed(&f.conn, t), None);
@@ -256,6 +312,8 @@ fn a_sender_rule_holds_its_mail_and_sender_tabs_refuse_drops() {
         (held, github)
     );
     assert!(labels_of(&f.conn, held).is_empty());
+    // Only the moved thread's sender is learned.
+    assert_eq!(out.undo.learned, vec!["pal@acme.test".to_string()]);
 
     assert!(apply_tab_move(&mut f.conn, &[free], RouteKey::Split(github), None).is_err());
 }
@@ -281,10 +339,21 @@ fn a_view_tab_drop_stars_and_keeps_the_thread_in_important() {
     assert_eq!(routed(&f.conn, t).as_deref(), Some("important"));
     assert_eq!(labels_of(&f.conn, t), vec![misc]);
     assert_eq!(queued(&f.conn, t), vec![action("star", None)]);
+    assert_eq!(
+        condition(&f.conn, f.starred_tab),
+        json!({ "kind": "any", "of": [
+            { "kind": "isStarred", "value": true },
+            sender("pal@acme.test"),
+        ] })
+    );
 
     revert_tab_move(&mut f.conn, &out.undo).unwrap();
     assert!(!is_starred(&f.conn, t));
     assert_eq!(routed(&f.conn, t).as_deref(), Some("important"));
+    assert_eq!(
+        condition(&f.conn, f.starred_tab),
+        json!({ "kind": "isStarred", "value": true })
+    );
 }
 
 #[test]
@@ -308,9 +377,57 @@ fn dragging_out_of_the_starred_tab_unstars_and_undo_restars() {
     assert!(!is_starred(&f.conn, t));
     assert_eq!(labels_of(&f.conn, t), vec![f.travel]);
     assert_eq!(routed(&f.conn, t), Some(format!("split:{}", f.travel_tab)));
+    assert_eq!(
+        condition(&f.conn, f.starred_tab),
+        json!({ "kind": "all", "of": [
+            { "kind": "any", "of": [{ "kind": "isStarred", "value": true }] },
+            { "kind": "not", "cond": { "kind": "any", "of": [sender("pal@acme.test")] } },
+        ] })
+    );
 
     revert_tab_move(&mut f.conn, &out.undo).unwrap();
     assert!(is_starred(&f.conn, t));
     assert!(labels_of(&f.conn, t).is_empty());
     assert_eq!(routed(&f.conn, t).as_deref(), Some("important"));
+    assert_eq!(
+        condition(&f.conn, f.starred_tab),
+        json!({ "kind": "isStarred", "value": true })
+    );
+}
+
+#[test]
+fn a_learned_sender_holding_the_thread_is_learned_out() {
+    let mut f = fixture();
+    let learned = json!({ "kind": "any", "of": [
+        { "kind": "label", "id": f.finance },
+        sender("bot@acme.test"),
+    ] });
+    let rule = repo::splits::get(&f.conn, f.finance_tab).unwrap().unwrap();
+    store_split_condition(
+        &f.conn,
+        &rule,
+        Some(&serde_json::from_value(learned.clone()).unwrap()),
+    )
+    .unwrap();
+    let t = thread(
+        &f.conn,
+        "bot@acme.test",
+        &[],
+        Some(&format!("split:{}", f.finance_tab)),
+    );
+
+    let (out, _) = apply_tab_move(&mut f.conn, &[t], RouteKey::Split(f.travel_tab), None).unwrap();
+    assert_eq!(out.moved, vec![t]);
+    assert_eq!(routed(&f.conn, t), Some(format!("split:{}", f.travel_tab)));
+    assert_eq!(
+        condition(&f.conn, f.finance_tab),
+        json!({ "kind": "all", "of": [
+            { "kind": "any", "of": [{ "kind": "label", "id": f.finance }] },
+            { "kind": "not", "cond": { "kind": "any", "of": [sender("bot@acme.test")] } },
+        ] })
+    );
+
+    revert_tab_move(&mut f.conn, &out.undo).unwrap();
+    assert_eq!(condition(&f.conn, f.finance_tab), learned);
+    assert_eq!(routed(&f.conn, t), Some(format!("split:{}", f.finance_tab)));
 }

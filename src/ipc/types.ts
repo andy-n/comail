@@ -208,6 +208,10 @@ export interface MoveUndo {
     starred?: boolean;
   }[];
   senders: { key: string; keyword: string | null }[];
+  /** Split conditions before senders were learned into them. */
+  conditions: { splitId: number; condition: RuleCondition | null }[];
+  /** Senders learned into or out of label tabs. */
+  learned: string[];
 }
 
 export interface AddPasswordAccountArgs {
@@ -1214,7 +1218,7 @@ export interface Commands {
    *  (`important`, `other`, `split:<id>` of a label tab, `label:<id>` of an
    *  AI category), dragged out of tab `from` when they all came from one
    *  (null: wherever routing filed each). Label tabs get their label or star
-   *  (synced to IMAP); a view tab only adds. */
+   *  (synced to IMAP) and learn the sender; a view tab only adds. */
   move_threads_to_tab(args: {
     threadIds: number[];
     to: string;

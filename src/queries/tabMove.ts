@@ -9,7 +9,8 @@ import { findCachedSummary } from "./actions";
 import { queryClient } from "./client";
 
 function refetchTabs() {
-  for (const key of ["threads", "bundles", "unreadCounts", "search", "thread"]) {
+  // `splits`: a drop onto a label tab learns the sender into its condition.
+  for (const key of ["threads", "bundles", "unreadCounts", "search", "thread", "splits"]) {
     void queryClient.invalidateQueries({ queryKey: [key] });
   }
 }

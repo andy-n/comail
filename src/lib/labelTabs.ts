@@ -15,6 +15,9 @@ import { RULE_MAX_NODES } from "./ruleCondition";
  * where `anchor` is `{kind:"label",id}` or `{kind:"isStarred",value:true}`.
  * A bare anchor leaf (how older label tabs were saved) and single-child
  * `all`/`any` wrappers around it are recognised too.
+ *
+ * `route/tab.rs` mirrors this module line for line: drag-and-drop learns
+ * senders in the backend (`route::manual`). Keep the two in step.
  */
 export type TabAnchor = { kind: "label"; labelId: number } | { kind: "starred" };
 

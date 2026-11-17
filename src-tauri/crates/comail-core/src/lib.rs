@@ -4147,34 +4147,8 @@ impl Core {
         let saved = self
             .db
             .write(move |conn| {
-                if let Some(cond) = &condition {
-                    let user_labels: Vec<i64> = repo::labels::list(conn)?
-                        .into_iter()
-                        .filter(|l| !l.is_auto)
-                        .map(|l| l.id)
-                        .collect();
-                    let errs = cond.validate(&user_labels);
-                    if !errs.is_empty() {
-                        let msg = errs.iter().map(|e| e.to_string()).collect::<Vec<_>>();
-                        return Err(CoreError::Other(format!(
-                            "invalid rule condition: {}",
-                            msg.join("; ")
-                        )));
-                    }
-                }
-                route::reroute::validate_target(conn, id, target, exclusive)?;
-                // A view tab is listed in SQL; an asynchronous AI verdict
-                // can't take part in that.
-                let has_ai = ai
-                    .as_ref()
-                    .is_some_and(|a| !a.instruction.trim().is_empty());
-                if !exclusive && has_ai {
-                    return Err(CoreError::Other(
-                        "a tab that keeps mail in the inbox can't use an AI check".into(),
-                    ));
-                }
                 let before = repo::splits::list(conn)?;
-                let saved = repo::splits::save(
+                let saved = store_split(
                     conn,
                     id,
                     &name,
@@ -4340,7 +4314,9 @@ impl Core {
     /// label tab, an AI category, Important or Other), dragged out of `from`
     /// (`None` = wherever routing filed it). Label and star changes go
     /// through the normal actions, so they sync to IMAP as keywords and
-    /// `\Flagged`. Threads a rule the drop can't undo keeps in place are
+    /// `\Flagged`. Drops onto a label tab learn the sender into it (and out of
+    /// the source tab); that sender's other inbox mail is re-checked in the
+    /// background. Threads a rule the drop can't undo keeps in place are
     /// reported in `held`; `undo` reverts the whole move
     /// ([`Core::undo_move_threads`]).
     pub async fn move_threads_to_tab(
@@ -4359,22 +4335,53 @@ impl Core {
         for acc in accounts {
             self.nudge(Some(acc), || SyncCmd::RunActions).await;
         }
+        self.reroute_learned_senders(&outcome.undo);
         Ok(outcome)
     }
 
-    /// Revert a [`Core::move_threads_to_tab`]: take back the labels and star
-    /// it added, restore the ones it removed, and put routes and sender
-    /// verdicts back.
+    /// Revert a [`Core::move_threads_to_tab`]: restore split conditions, take
+    /// back the labels and star it added, restore the ones it removed, and put
+    /// routes and sender verdicts back.
     pub async fn undo_move_threads(&self, undo: route::manual::MoveUndo) -> Result<()> {
-        let (thread_ids, accounts) = self
+        let (thread_ids, accounts, undo) = self
             .db
-            .write(move |conn| revert_tab_move(conn, &undo))
+            .write(move |conn| {
+                let (ids, accounts) = revert_tab_move(conn, &undo)?;
+                Ok((ids, accounts, undo))
+            })
             .await?;
         self.bus.emit(CoreEvent::MailUpdated { thread_ids });
         for acc in accounts {
             self.nudge(Some(acc), || SyncCmd::RunActions).await;
         }
+        self.reroute_learned_senders(&undo);
         Ok(())
+    }
+
+    /// After a move (or its undo) changed which senders label tabs learned,
+    /// re-check those senders' other inbox threads against the current rules,
+    /// off the drop's path. The moved threads keep the route the move gave
+    /// (or the undo restored).
+    fn reroute_learned_senders(&self, undo: &route::manual::MoveUndo) {
+        if undo.learned.is_empty() {
+            return;
+        }
+        let senders = undo.learned.clone();
+        let skip: HashSet<i64> = undo.threads.iter().map(|t| t.thread_id).collect();
+        let core = self.clone();
+        tokio::spawn(async move {
+            let rerouted = core
+                .db
+                .write(move |conn| reroute_senders(conn, &senders, &skip))
+                .await;
+            match rerouted {
+                Ok(ids) if !ids.is_empty() => {
+                    core.bus.emit(CoreEvent::MailUpdated { thread_ids: ids });
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!("re-routing learned senders failed: {e}"),
+            }
+        });
     }
 
     pub async fn list_labels(&self) -> Result<Vec<Label>> {
@@ -5777,6 +5784,71 @@ pub(crate) fn enqueue_move(
     )
 }
 
+/// Validate and store one split row: the checks behind [`Core::save_split`],
+/// shared with the senders drag-and-drop learns into label tabs. Rerouting is
+/// the caller's.
+#[allow(clippy::too_many_arguments)]
+fn store_split(
+    conn: &rusqlite::Connection,
+    id: Option<i64>,
+    name: &str,
+    position: i64,
+    query: &SplitRuleQuery,
+    condition: Option<&RuleCondition>,
+    target: Option<RouteKey>,
+    ai: Option<&AiCheck>,
+    count_all: bool,
+    exclusive: bool,
+) -> Result<SplitRule> {
+    if let Some(cond) = condition {
+        let user_labels: Vec<i64> = repo::labels::list(conn)?
+            .into_iter()
+            .filter(|l| !l.is_auto)
+            .map(|l| l.id)
+            .collect();
+        let errs = cond.validate(&user_labels);
+        if !errs.is_empty() {
+            let msg = errs.iter().map(|e| e.to_string()).collect::<Vec<_>>();
+            return Err(CoreError::Other(format!(
+                "invalid rule condition: {}",
+                msg.join("; ")
+            )));
+        }
+    }
+    route::reroute::validate_target(conn, id, target, exclusive)?;
+    // A view tab is listed in SQL; an asynchronous AI verdict can't take part
+    // in that.
+    let has_ai = ai.is_some_and(|a| !a.instruction.trim().is_empty());
+    if !exclusive && has_ai {
+        return Err(CoreError::Other(
+            "a tab that keeps mail in the inbox can't use an AI check".into(),
+        ));
+    }
+    repo::splits::save(
+        conn, id, name, position, query, condition, target, ai, count_all, exclusive,
+    )
+}
+
+/// Save `rule` with `condition` through [`store_split`].
+fn store_split_condition(
+    conn: &rusqlite::Connection,
+    rule: &SplitRule,
+    condition: Option<&RuleCondition>,
+) -> Result<SplitRule> {
+    store_split(
+        conn,
+        Some(rule.id),
+        &rule.name,
+        rule.position,
+        &rule.query,
+        condition,
+        rule.target,
+        rule.ai.as_ref(),
+        rule.count_all,
+        rule.exclusive,
+    )
+}
+
 /// One thread action through [`apply_thread_action`] (local change + queued
 /// IMAP label keyword or `\Flagged`), collecting the accounts whose queue
 /// needs a nudge.
@@ -5839,9 +5911,11 @@ fn apply_tab_move(
     from: Option<RouteKey>,
 ) -> Result<(route::manual::MoveOutcome, Vec<i64>)> {
     use route::manual::{
-        Category, HeldThread, MoveFacts, MovePlan, MoveStep, SenderUndo, ThreadUndo,
+        Category, ConditionUndo, HeldThread, MoveFacts, MovePlan, MoveStep, SenderUndo, ThreadUndo,
     };
-    let splits = repo::splits::list(conn)?;
+    // Kept current as learned senders edit conditions, so each thread is
+    // planned against the rules the previous ones left.
+    let mut splits = repo::splits::list(conn)?;
     let categories: Vec<Category> = repo::labels::list(conn)?
         .into_iter()
         .filter(|l| l.is_auto)
@@ -5896,6 +5970,30 @@ fn apply_tab_move(
         let mut routed = false;
         for step in steps {
             match step {
+                MoveStep::SetCondition {
+                    split_id,
+                    condition,
+                } => {
+                    let Some(rule) = splits.iter_mut().find(|s| s.id == split_id) else {
+                        continue;
+                    };
+                    if !outcome
+                        .undo
+                        .conditions
+                        .iter()
+                        .any(|c| c.split_id == split_id)
+                    {
+                        outcome.undo.conditions.push(ConditionUndo {
+                            split_id,
+                            condition: rule.condition.clone(),
+                        });
+                    }
+                    *rule = store_split_condition(conn, rule, Some(&condition))?;
+                    let learned = sender.as_deref().map(route::tab::normalize_sender);
+                    if let Some(s) = learned.filter(|s| !outcome.undo.learned.contains(s)) {
+                        outcome.undo.learned.push(s);
+                    }
+                }
                 MoveStep::AddLabel(label_id) => {
                     label_thread(conn, thread_id, label_id, true, &mut accounts)?;
                     undo.added_labels.push(label_id);
@@ -5944,12 +6042,37 @@ fn apply_tab_move(
     Ok((outcome, accounts))
 }
 
+/// Re-check the inbox threads with mail from `senders` (other than `skip`)
+/// against the current rules, after label tabs learned those senders.
+/// Returns the threads checked.
+fn reroute_senders(
+    conn: &mut rusqlite::Connection,
+    senders: &[String],
+    skip: &HashSet<i64>,
+) -> Result<Vec<i64>> {
+    let tx = conn.transaction()?;
+    let ids: Vec<i64> = route::reroute::inbox_threads_from(&tx, senders)?
+        .into_iter()
+        .filter(|id| !skip.contains(id))
+        .collect();
+    route::reroute_threads_after_change(&tx, &ids)?;
+    tx.commit()?;
+    Ok(ids)
+}
+
 /// Execute [`Core::undo_move_threads`]. Returns the threads touched and the
 /// accounts with newly queued actions.
 fn revert_tab_move(
     conn: &mut rusqlite::Connection,
     undo: &route::manual::MoveUndo,
 ) -> Result<(Vec<i64>, Vec<i64>)> {
+    // Conditions first, so the label and star actions' own rerouting already
+    // sees the rules as they were.
+    for c in &undo.conditions {
+        if let Some(rule) = repo::splits::get(conn, c.split_id)? {
+            store_split_condition(conn, &rule, c.condition.as_ref())?;
+        }
+    }
     let mut accounts = Vec::new();
     for t in &undo.threads {
         for &label_id in &t.added_labels {

@@ -32,6 +32,30 @@ pub fn inbox_thread_ids(conn: &Connection) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+/// Inbox threads with inbound mail from any of `senders` (exact addresses,
+/// compared lowercased), newest first per sender.
+pub fn inbox_threads_from(conn: &Connection, senders: &[String]) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.id FROM threads t
+         WHERE EXISTS (SELECT 1 FROM messages m
+                       WHERE m.thread_id = t.id AND m.is_outgoing = 0
+                         AND lower(m.from_addr) = ?1)
+           AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id
+                       WHERE m.thread_id = t.id AND f.role = ?2)
+         ORDER BY t.last_message_at DESC, t.id DESC",
+    )?;
+    let mut ids = Vec::new();
+    for sender in senders {
+        for id in stmt.query_map(params![sender.to_lowercase(), roles::INBOX], |r| r.get(0))? {
+            let id: i64 = id?;
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    Ok(ids)
+}
+
 /// What applying a rule change to existing inbox mail would do.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
