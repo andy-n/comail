@@ -494,7 +494,17 @@
     "editNamed": "Edit {{name}}",
     "deleteNamed": "Delete {{name}}",
     "reorderHandle": "Reorder {{name}}, position {{position}} of {{total}}. Drag, or press Up or Down arrow.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Label tabs",
+      "description": "Show a label, or your starred mail, as its own inbox tab. Hide from inbox moves that mail out of Important into the tab; left off, it shows in both.",
+      "starred": "Starred",
+      "showAsTab": "Show as tab",
+      "hideFromInbox": "Hide from inbox",
+      "showAria": "Show {{name}} as an inbox tab",
+      "hideAria": "Hide {{name}} mail from the inbox",
+      "failed": "Couldn't update the tab: {{detail}}"
+    }
   },
   "labels": {
     "title": "Labels",

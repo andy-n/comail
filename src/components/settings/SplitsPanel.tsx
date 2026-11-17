@@ -35,6 +35,7 @@ import {
 } from "./panelKit";
 import { AiCheckField } from "./AiCheckField";
 import { ConditionBuilder, describeCondition } from "./ConditionBuilder";
+import { LabelTabsSection } from "./LabelTabsSection";
 
 type Automated = "any" | "automated" | "human";
 type EditMode = "simple" | "advanced";
@@ -560,6 +561,7 @@ export function SplitInboxSection() {
               badge={t("settings:splits.builtin.lastBadge")}
             />
           </SettingsGroup>
+          <LabelTabsSection />
         </>
       )}
     </section>

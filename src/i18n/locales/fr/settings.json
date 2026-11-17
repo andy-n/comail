@@ -492,7 +492,17 @@
     "editNamed": "Modifier {{name}}",
     "deleteNamed": "Supprimer {{name}}",
     "reorderHandle": "Réorganiser {{name}}, position {{position}} sur {{total}}. Faites glisser ou utilisez les flèches haut et bas.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Onglets de libellés",
+      "description": "Affichez un libellé, ou vos messages suivis, dans leur propre onglet de la boîte de réception. Masquer de la boîte sort ces messages d’Important pour les placer dans l’onglet ; désactivé, ils apparaissent aux deux endroits.",
+      "starred": "Suivis",
+      "showAsTab": "Afficher en onglet",
+      "hideFromInbox": "Masquer de la boîte",
+      "showAria": "Afficher {{name}} comme onglet de la boîte de réception",
+      "hideAria": "Masquer de la boîte de réception les messages {{name}}",
+      "failed": "Impossible de mettre à jour l’onglet : {{detail}}"
+    }
   },
   "labels": {
     "title": "Libellés",

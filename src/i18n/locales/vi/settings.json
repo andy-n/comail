@@ -492,7 +492,17 @@
     "editNamed": "Sửa {{name}}",
     "deleteNamed": "Xóa {{name}}",
     "reorderHandle": "Sắp xếp {{name}}, vị trí {{position}}/{{total}}. Kéo thả hoặc nhấn phím mũi tên lên/xuống.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Tab theo nhãn",
+      "description": "Hiển thị một nhãn, hoặc thư gắn sao, thành một tab riêng trong hộp thư. Ẩn khỏi hộp thư sẽ chuyển thư đó khỏi Quan trọng vào tab; khi tắt, thư hiện ở cả hai nơi.",
+      "starred": "Gắn sao",
+      "showAsTab": "Hiện thành tab",
+      "hideFromInbox": "Ẩn khỏi hộp thư",
+      "showAria": "Hiển thị {{name}} thành một tab trong hộp thư",
+      "hideAria": "Ẩn thư {{name}} khỏi hộp thư đến",
+      "failed": "Không thể cập nhật tab: {{detail}}"
+    }
   },
   "labels": {
     "title": "Nhãn",

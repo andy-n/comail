@@ -9,6 +9,9 @@ export type BundleTab = {
   labelId?: number;
   /** Color of the label that fills this tab, when there is one. */
   color?: string;
+  /** A view tab (non-exclusive split): its threads stay in Important too, so
+   *  the inline list must not drop them as already bundled. */
+  view?: boolean;
 };
 
 /** A non-Important inbox tab collapsed into one comfortable-list row. */
@@ -62,9 +65,10 @@ function inlineTimeline(threads: ThreadSummary[], bundles: Bundle[]): Entry[] {
   return out;
 }
 
-/** Ids of every thread previewed by a bundle. */
+/** Ids of every thread previewed by a bundle that takes its mail out of
+ *  Important (view-tab bundles only mirror threads that stay listed). */
 export function bundledThreadIds(bundles: Bundle[]): Set<number> {
-  return new Set(bundles.flatMap((b) => b.threads.map((th) => th.id)));
+  return new Set(bundles.filter((b) => !b.view).flatMap((b) => b.threads.map((th) => th.id)));
 }
 
 /** Thread order of the inline-bundled list (what J/K walks): each expanded

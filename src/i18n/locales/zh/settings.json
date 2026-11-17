@@ -492,7 +492,17 @@
     "editNamed": "编辑 {{name}}",
     "deleteNamed": "删除 {{name}}",
     "reorderHandle": "调整 {{name}} 的顺序，第 {{position}} 个，共 {{total}} 个。拖动或按上下方向键。",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "标签分栏",
+      "description": "将某个标签或已加星标的邮件显示为独立的收件箱分栏。开启“从收件箱隐藏”后，这些邮件会离开“重要”并移入该分栏；关闭时两处都会显示。",
+      "starred": "已加星标",
+      "showAsTab": "显示为分栏",
+      "hideFromInbox": "从收件箱隐藏",
+      "showAria": "将 {{name}} 显示为收件箱分栏",
+      "hideAria": "在收件箱中隐藏 {{name}} 邮件",
+      "failed": "无法更新分栏：{{detail}}"
+    }
   },
   "labels": {
     "title": "标签",

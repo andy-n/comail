@@ -492,7 +492,17 @@
     "editNamed": "Editar {{name}}",
     "deleteNamed": "Eliminar {{name}}",
     "reorderHandle": "Reordenar {{name}}, posición {{position}} de {{total}}. Arrastra o pulsa flecha arriba o abajo.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Pestañas de etiquetas",
+      "description": "Muestra una etiqueta, o tu correo destacado, como pestaña propia de la bandeja. Ocultar de la bandeja saca ese correo de Importante y lo lleva a la pestaña; desactivado, aparece en ambas.",
+      "starred": "Destacados",
+      "showAsTab": "Mostrar como pestaña",
+      "hideFromInbox": "Ocultar de la bandeja",
+      "showAria": "Mostrar {{name}} como pestaña de la bandeja",
+      "hideAria": "Ocultar de la bandeja el correo de {{name}}",
+      "failed": "No se pudo actualizar la pestaña: {{detail}}"
+    }
   },
   "labels": {
     "title": "Etiquetas",
