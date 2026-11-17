@@ -37,6 +37,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/033_folder_role_repairs.sql"),
     include_str!("migrations/034_stable_identity_attempts.sql"),
     include_str!("migrations/035_restore_non_trash_roles.sql"),
+    include_str!("migrations/036_split_exclusive.sql"),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -541,6 +542,30 @@ mod tests {
                  FROM contacts c JOIN contact_accounts ca ON ca.contact_id = c.id
                  WHERE c.email = 'kim@acme.com' AND c.name = 'Kim'"),
             (1, 0, 200)
+        );
+    }
+
+    #[test]
+    fn migration_036_keeps_existing_splits_exclusive() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_through(&mut conn, 35);
+        conn.execute(
+            "INSERT INTO split_rules (id, name, position, query_json, condition_json)
+             VALUES (4, 'Receipts', 0, '{}', '{\"kind\":\"label\",\"id\":9}')",
+            [],
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let rules = crate::db::repo::splits::list(&conn).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].exclusive, "pre-existing splits keep routing");
+        conn.execute("UPDATE split_rules SET exclusive = 0 WHERE id = 4", [])
+            .unwrap();
+        assert!(
+            !crate::db::repo::splits::get(&conn, 4)
+                .unwrap()
+                .unwrap()
+                .exclusive
         );
     }
 }

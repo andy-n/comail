@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
-import type { AiAutomationRule, Label, RuleCondition, Settings, SplitRule } from "../../ipc/types";
+import type { AiAutomationRule, Label, Settings } from "../../ipc/types";
+import { findTab } from "../../lib/labelTabs";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { Button, ConfirmButton, EmptyState, FormField, inputCls, SettingsGroup, Toggle } from "./panelKit";
 import { newRule, RuleForm } from "./RulesEditor";
+import { setLabelTab } from "./LabelTabsSection";
 import { invalidateSplitViews } from "./SplitsPanel";
 
 import { LABEL_COLORS as SWATCHES } from "../../lib/labelColors";
@@ -29,23 +31,6 @@ export function LabelsPanel() {
     if (open) set({ panel: "settings", settingsTab: "labels" });
   }, [open, set]);
   return null;
-}
-
-/** The split that shows exactly this label as an inbox tab, if any. */
-function labelTabSplit(splits: SplitRule[], labelId: number): SplitRule | undefined {
-  const only = (c: RuleCondition | null | undefined): boolean =>
-    !!c &&
-    ((c.kind === "label" && c.id === labelId) ||
-      ((c.kind === "all" || c.kind === "any") && c.of.length === 1 && only(c.of[0])));
-  return splits.find(
-    (s) =>
-      s.target == null &&
-      (s.condition
-        ? only(s.condition)
-        : s.query.labels?.length === 1 &&
-          s.query.labels[0] === labelId &&
-          Object.keys(s.query).length === 1),
-  );
 }
 
 /** Rules whose actions add this label. */
@@ -89,22 +74,7 @@ export function LabelsSection({
   const toggleTab = async (label: Label, on: boolean) => {
     setTabBusy(label.id);
     try {
-      const existing = labelTabSplit(splits ?? [], label.id);
-      if (on && !existing) {
-        await call("save_split", {
-          split: {
-            id: null,
-            name: label.name,
-            position: splits?.length ?? 0,
-            query: {},
-            condition: { kind: "label", id: label.id },
-            target: null,
-            countAll: false,
-          },
-        });
-      } else if (!on && existing) {
-        await call("delete_split", { splitId: existing.id });
-      }
+      await setLabelTab({ kind: "label", labelId: label.id }, label.name, on, splits, labels);
     } catch (err) {
       pushToast({ kind: "error", message: t("settings:labels.tabFailed", { detail: errorMessage(err) }) });
     } finally {
@@ -181,7 +151,7 @@ export function LabelsSection({
                       <span className="flex items-center gap-1.5 text-xs text-ink-faint">
                         <Toggle
                           label={t("settings:labels.showAsTab", { name: l.name })}
-                          checked={labelTabSplit(splits ?? [], l.id) != null}
+                          checked={findTab(splits, { kind: "label", labelId: l.id }) != null}
                           onChange={(on) => {
                             if (tabBusy == null) void toggleTab(l, on);
                           }}

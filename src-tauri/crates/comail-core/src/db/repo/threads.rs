@@ -209,8 +209,10 @@ pub fn get_summaries(conn: &Connection, thread_ids: &[i64]) -> Result<Vec<Thread
 
 /// Which inbox tab to filter to. Overlay tabs (Split/AutoLabel) read the single
 /// resolved `threads.routed_tab` so a thread appears in exactly one; the
-/// Important/Other defaults catch everything still unrouted. Manual (user)
-/// labels are a cross-cutting filter, not a routed tab.
+/// Important/Other defaults catch everything still unrouted. A split that is a
+/// view tab (`exclusive == false`) instead lists inbox threads matching its
+/// condition, wherever they are routed. Manual (user) labels are a
+/// cross-cutting filter, not a routed tab.
 pub enum TabFilter {
     Important,
     Other,
@@ -328,10 +330,16 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
             "(t.routed_tab = 'other'
               OR ((t.routed_tab IS NULL OR t.routed_tab = 'pending') AND ({AUTO_BUCKET})))"
         )),
-        Some(TabFilter::Split(id)) => {
-            bind.push(Box::new(format!("split:{id}")));
-            where_clauses.push(format!("t.routed_tab = ?{}", bind.len()));
-        }
+        Some(TabFilter::Split(id)) => match super::splits::get(conn, *id)? {
+            Some(rule) if !rule.exclusive => {
+                let c = crate::route::sql::view_tab_clause(&rule.effective_condition(), &mut bind);
+                where_clauses.push(c);
+            }
+            _ => {
+                bind.push(Box::new(format!("split:{id}")));
+                where_clauses.push(format!("t.routed_tab = ?{}", bind.len()));
+            }
+        },
         Some(TabFilter::AutoLabel(id)) => {
             bind.push(Box::new(format!("label:{id}")));
             where_clauses.push(format!("t.routed_tab = ?{}", bind.len()));
@@ -501,5 +509,83 @@ mod tests {
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), 5);
+    }
+
+    #[test]
+    fn view_tab_lists_matching_inbox_threads_wherever_routed() {
+        use crate::models::{RuleCondition, SplitRuleQuery};
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let label = super::super::labels::save(&c, None, "Travel", "#888", 0)
+            .unwrap()
+            .id;
+        let (a, am) = testutil::seed_message(&c, "a@x.io", "flight", false);
+        let (b, bm) = testutil::seed_message(&c, "b@x.io", "hotel", false);
+        let (_other, _) = testutil::seed_message(&c, "c@x.io", "lunch", false);
+        for m in [am, bm] {
+            super::super::labels::add_to_message(&c, m, label).unwrap();
+        }
+        // An exclusive split claimed `b`; the view tab must still list it.
+        c.execute(
+            "UPDATE threads SET routed_tab = 'split:99' WHERE id = ?1",
+            [b],
+        )
+        .unwrap();
+        let cond = RuleCondition::Any {
+            of: vec![RuleCondition::Label { id: label }],
+        };
+        let save = |exclusive| {
+            super::super::splits::save(
+                &c,
+                None,
+                "Travel",
+                0,
+                &SplitRuleQuery::default(),
+                Some(&cond),
+                None,
+                None,
+                false,
+                exclusive,
+            )
+            .unwrap()
+            .id
+        };
+        let view = save(false);
+        let routed = save(true);
+        let listed = |tab| {
+            let mut ids: Vec<i64> = list(
+                &c,
+                &ListArgs {
+                    view: View::Inbox,
+                    tab: Some(tab),
+                    account_id: None,
+                    folder_id: None,
+                    cursor: None,
+                    limit: 50,
+                },
+            )
+            .unwrap()
+            .threads
+            .iter()
+            .map(|t| t.id)
+            .collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(listed(TabFilter::Split(view)), vec![a, b]);
+        assert!(
+            listed(TabFilter::Important).contains(&a),
+            "also in Important"
+        );
+        // An exclusive split still lists only what routing filed there.
+        assert!(listed(TabFilter::Split(routed)).is_empty());
+        // Archived mail leaves the view tab like it leaves the inbox.
+        c.execute_batch(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,1,'Archive','archive');",
+        )
+        .unwrap();
+        c.execute("UPDATE messages SET folder_id = 2 WHERE id = ?1", [am])
+            .unwrap();
+        assert_eq!(listed(TabFilter::Split(view)), vec![b]);
     }
 }

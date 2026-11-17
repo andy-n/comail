@@ -13,6 +13,10 @@ fn err(e: comail_core::error::CoreError) -> String {
     e.to_ipc_json()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 // ---------- accounts ----------
 
 #[tauri::command]
@@ -865,6 +869,10 @@ pub struct SplitInput {
     /// Badge every conversation in the tab, not just the unread ones.
     #[serde(default)]
     pub count_all: bool,
+    /// Hide matches from the inbox (route them here). False = a view tab
+    /// listing inbox mail matching the condition. Defaults to true.
+    #[serde(default = "default_true")]
+    pub exclusive: bool,
 }
 
 #[tauri::command]
@@ -889,6 +897,7 @@ pub async fn save_split(
             split.target,
             split.ai,
             split.count_all,
+            split.exclusive,
             apply_existing.unwrap_or(true),
         )
         .await

@@ -9,6 +9,7 @@ import {
   useUnreadCounts,
 } from "../queries/hooks";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
+import { tabMatch } from "./labelTabs";
 import type { Bundle, BundleTab } from "./listItems";
 import { inboxTabOrder } from "./splitOrder";
 
@@ -46,9 +47,10 @@ export function useBundles(): { bundles: Bundle[]; show: boolean; inline: boolea
       if (item.kind === "other") return [{ key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER }];
       if (item.kind === "split") {
         // A split filed by one label (e.g. an AI-applied topic) takes that label's color.
-        const cond = item.rule.condition;
-        const color = cond?.kind === "label" ? labelColor(cond.id) : undefined;
-        return [{ key: `s${item.id}`, name: item.name, splitId: item.id, color }];
+        const anchor = tabMatch(item.rule);
+        const color = anchor?.kind === "label" ? labelColor(anchor.labelId) : undefined;
+        const view = item.rule.exclusive === false;
+        return [{ key: `s${item.id}`, name: item.name, splitId: item.id, color, view }];
       }
       return [{ key: `l${item.id}`, name: item.name, labelId: item.id, color: item.label.color }];
     });

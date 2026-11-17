@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadSummary } from "../ipc/types";
-import { buildListItems, inlineThreadOrder, type Bundle, type ListItem } from "./listItems";
+import { buildListItems, bundledThreadIds, inlineThreadOrder, type Bundle, type ListItem } from "./listItems";
 
 const NOW = new Date(2026, 9, 18, 15, 0).getTime();
 const HOUR = 3_600_000;
@@ -133,5 +133,19 @@ describe("inline bundles", () => {
     );
     expect(rows.map((t) => t.id)).toEqual([1, 10, 11, 2, 3]);
     expect(shown).toEqual([1, 10, 11, 2, 3]);
+  });
+
+  it("keeps a view tab's threads in the list (they stay in Important too)", () => {
+    const starred = thread(1, NOW - HOUR);
+    const rows = [starred, thread(2, NOW - 2 * HOUR)];
+    const view = { ...bundle("v", [starred]), view: true };
+    expect(bundledThreadIds([view])).toEqual(new Set());
+    expect(bundledThreadIds([bundle("x", [starred])])).toEqual(new Set([1]));
+    const ids = (b: Bundle) =>
+      buildListItems(rows, false, [b], NOW, undefined, { expanded: new Set() }).flatMap((it) =>
+        it.kind === "thread" ? [it.thread.id] : [],
+      );
+    expect(ids(view)).toEqual([1, 2]);
+    expect(ids(bundle("x", [starred]))).toEqual([2]);
   });
 });

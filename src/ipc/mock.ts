@@ -1923,7 +1923,8 @@ function matchesSplitRule(t: MockThread, rule: SplitRule): boolean {
 
 function matchesAnyCustomSplit(t: MockThread): boolean {
   if (t.routedTab?.startsWith("split:")) return true;
-  return splits.some((r) => matchesSplitRule(t, r));
+  // View tabs (exclusive: false) never take mail out of Important/Other.
+  return splits.some((r) => r.exclusive !== false && matchesSplitRule(t, r));
 }
 
 /**
@@ -1936,8 +1937,10 @@ function matchesAnyCustomSplit(t: MockThread): boolean {
 function inSplit(t: MockThread, splitId: number | null | undefined): boolean {
   if (splitId == null) return true;
   if (splitId > 0) {
-    if (t.routedTab != null) return t.routedTab === `split:${splitId}`;
     const rule = splits.find((r) => r.id === splitId);
+    // A view tab lists every matching thread, wherever it is routed.
+    if (rule?.exclusive === false) return matchesSplitRule(t, rule);
+    if (t.routedTab != null) return t.routedTab === `split:${splitId}`;
     return rule ? matchesSplitRule(t, rule) : false;
   }
   if (t.routedTab === "important") return splitId === -1;
@@ -4122,14 +4125,17 @@ function mockConditionSubject(t: MockThread): ConditionSubject {
     labelIds: t.labels,
     isAutomated: inbound[0] ? inbound[0].listUnsubscribe != null : null,
     hasAttachment: t.messages.some((m) => !m.isDraft && m.attachments.length > 0),
+    isStarred: inView(t, "starred"),
   };
 }
 
-/** Rules in position order up to (and including) the first match. */
+/** Routing rules (view tabs excluded) in position order up to (and
+ *  including) the first match. */
 function mockDecide(t: MockThread): RuleTrace[] {
   const subject = mockConditionSubject(t);
   const out: RuleTrace[] = [];
-  for (const s of [...splits].sort((x, y) => x.position - y.position || x.id - y.id)) {
+  const routing = splits.filter((s) => s.exclusive !== false);
+  for (const s of routing.sort((x, y) => x.position - y.position || x.id - y.id)) {
     const cond = s.condition ?? queryToCondition(s.query);
     const leaves: RuleTrace["leaves"] = [];
     const walk = (c: RuleCondition) => {

@@ -100,6 +100,7 @@ export function SplitPopover() {
         position: nextTabPosition(splits, labels),
         query: { senders: [needle] },
         countAll: false,
+        exclusive: true,
       },
     });
     invalidate();
@@ -133,6 +134,7 @@ export function SplitPopover() {
           query: { ...matchedRule.query, excludeSenders: [...existing, needle] },
           target: matchedRule.target ?? null,
           countAll: matchedRule.countAll ?? false,
+          exclusive: matchedRule.exclusive ?? true,
         },
       });
     }

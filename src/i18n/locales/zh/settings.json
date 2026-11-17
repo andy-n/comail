@@ -406,6 +406,9 @@
     },
     "automatedHint": "自动邮件指群发邮件：新闻简报、通知、no-reply 发件人（通过 List-Unsubscribe / 群发邮件头识别）。“来自真人”指由人撰写的邮件。“任意”表示忽略此项。",
     "hasAttachmentLabel": "仅含附件的邮件",
+    "exclusiveLabel": "在收件箱中隐藏匹配的邮件",
+    "exclusiveHint": "开启时，匹配的邮件会移入此分栏并离开“重要”；以第一个匹配的分栏为准。关闭时，此分栏显示收件箱中所有匹配的会话，邮件保留在原处。",
+    "viewBadge": "仍在收件箱",
     "targetLabel": "将匹配邮件发送到",
     "targetHint": "独立标签页会为此规则新建一个收件箱标签页。选择“重要”、“其他”或某个分类，可将匹配的邮件放入已有标签页。",
     "target": {
@@ -439,7 +442,8 @@
         "subject": "主题",
         "label": "包含标签",
         "isAutomated": "自动邮件",
-        "hasAttachment": "有附件"
+        "hasAttachment": "有附件",
+        "isStarred": "已加星标"
       },
       "ops": {
         "contains": "包含",
@@ -488,7 +492,17 @@
     "editNamed": "编辑 {{name}}",
     "deleteNamed": "删除 {{name}}",
     "reorderHandle": "调整 {{name}} 的顺序，第 {{position}} 个，共 {{total}} 个。拖动或按上下方向键。",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "标签分栏",
+      "description": "将某个标签或已加星标的邮件显示为独立的收件箱分栏。开启“从收件箱隐藏”后，这些邮件会离开“重要”并移入该分栏；关闭时两处都会显示。",
+      "starred": "已加星标",
+      "showAsTab": "显示为分栏",
+      "hideFromInbox": "从收件箱隐藏",
+      "showAria": "将 {{name}} 显示为收件箱分栏",
+      "hideAria": "在收件箱中隐藏 {{name}} 邮件",
+      "failed": "无法更新分栏：{{detail}}"
+    }
   },
   "labels": {
     "title": "标签",

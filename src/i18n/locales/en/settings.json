@@ -408,6 +408,9 @@
     "hasAttachmentLabel": "Only mail with an attachment",
     "countAllLabel": "Count every conversation, not just unread",
     "countAllHint": "The tab badge normally shows unread conversations only, so a tab you have read shows no number. Turn this on to badge everything this split holds.",
+    "exclusiveLabel": "Hide matching mail from the inbox",
+    "exclusiveHint": "On, matching mail moves into this tab and out of Important; the first matching tab wins. Off, the tab shows every inbox conversation that matches and the mail stays where it is.",
+    "viewBadge": "Also in inbox",
     "targetLabel": "Route matches to",
     "targetHint": "Its own tab gives this rule a new inbox tab. Pick Important, Other, or a category to drop matching mail into an existing tab instead.",
     "target": {
@@ -441,7 +444,8 @@
         "subject": "Subject",
         "label": "Has label",
         "isAutomated": "Automated",
-        "hasAttachment": "Has attachment"
+        "hasAttachment": "Has attachment",
+        "isStarred": "Starred"
       },
       "ops": {
         "contains": "contains",
@@ -490,7 +494,17 @@
     "editNamed": "Edit {{name}}",
     "deleteNamed": "Delete {{name}}",
     "reorderHandle": "Reorder {{name}}, position {{position}} of {{total}}. Drag, or press Up or Down arrow.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Label tabs",
+      "description": "Show a label, or your starred mail, as its own inbox tab. Hide from inbox moves that mail out of Important into the tab; left off, it shows in both.",
+      "starred": "Starred",
+      "showAsTab": "Show as tab",
+      "hideFromInbox": "Hide from inbox",
+      "showAria": "Show {{name}} as an inbox tab",
+      "hideAria": "Hide {{name}} mail from the inbox",
+      "failed": "Couldn't update the tab: {{detail}}"
+    }
   },
   "labels": {
     "title": "Labels",

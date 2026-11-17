@@ -406,6 +406,9 @@
     },
     "automatedHint": "Tự động là thư hàng loạt: bản tin, thông báo, người gửi no-reply (nhận diện qua List-Unsubscribe / tiêu đề thư hàng loạt). \"Từ một người\" là thư do người viết. \"Bất kỳ\" bỏ qua tiêu chí này.",
     "hasAttachmentLabel": "Chỉ thư có tệp đính kèm",
+    "exclusiveLabel": "Ẩn thư khớp khỏi hộp thư đến",
+    "exclusiveHint": "Bật: thư khớp được chuyển vào tab này và rời khỏi Quan trọng; tab khớp đầu tiên được áp dụng. Tắt: tab hiển thị mọi cuộc hội thoại khớp trong hộp thư đến và thư vẫn ở nguyên chỗ cũ.",
+    "viewBadge": "Vẫn trong hộp thư",
     "targetLabel": "Chuyển thư khớp tới",
     "targetHint": "Tab riêng tạo một tab hộp thư mới cho quy tắc này. Chọn Quan trọng, Khác hoặc một danh mục để đưa thư khớp vào tab có sẵn.",
     "target": {
@@ -439,7 +442,8 @@
         "subject": "Tiêu đề",
         "label": "Có nhãn",
         "isAutomated": "Tự động",
-        "hasAttachment": "Có tệp đính kèm"
+        "hasAttachment": "Có tệp đính kèm",
+        "isStarred": "Gắn sao"
       },
       "ops": {
         "contains": "chứa",
@@ -488,7 +492,17 @@
     "editNamed": "Sửa {{name}}",
     "deleteNamed": "Xóa {{name}}",
     "reorderHandle": "Sắp xếp {{name}}, vị trí {{position}}/{{total}}. Kéo thả hoặc nhấn phím mũi tên lên/xuống.",
-    "routesTo": "→ {{target}}"
+    "routesTo": "→ {{target}}",
+    "labelTabs": {
+      "title": "Tab theo nhãn",
+      "description": "Hiển thị một nhãn, hoặc thư gắn sao, thành một tab riêng trong hộp thư. Ẩn khỏi hộp thư sẽ chuyển thư đó khỏi Quan trọng vào tab; khi tắt, thư hiện ở cả hai nơi.",
+      "starred": "Gắn sao",
+      "showAsTab": "Hiện thành tab",
+      "hideFromInbox": "Ẩn khỏi hộp thư",
+      "showAria": "Hiển thị {{name}} thành một tab trong hộp thư",
+      "hideAria": "Ẩn thư {{name}} khỏi hộp thư đến",
+      "failed": "Không thể cập nhật tab: {{detail}}"
+    }
   },
   "labels": {
     "title": "Nhãn",
