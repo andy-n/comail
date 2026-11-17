@@ -192,11 +192,12 @@ pub fn reapply_splits_only(
     }
 }
 
-/// Re-check a thread's split routing after its labels changed by hand. A rule
+/// Re-check a thread's split routing after a fact a rule tests changed outside
+/// routing: its labels or its star, by hand or pulled from the server. A rule
 /// that now matches claims the thread; if none does and the thread was in a
 /// split's own tab, it falls back (removing the label it was filed by). AI and
-/// heuristic verdicts are otherwise left alone, so labelling costs no model call.
-pub fn reroute_after_label_change(
+/// heuristic verdicts are otherwise left alone, so this costs no model call.
+pub fn reroute_after_change(
     conn: &Connection,
     splits: &[SplitRule],
     fallback: Fallback,
@@ -227,6 +228,24 @@ pub fn reroute_after_label_change(
             route_thread_deterministic(conn, &[], fallback, thread_id)?;
         }
         None => {}
+    }
+    Ok(())
+}
+
+/// [`reroute_after_change`] for each thread, with the current rules and the
+/// fallback the settings select. A no-op without split rules.
+pub fn reroute_threads_after_change(conn: &Connection, thread_ids: &[i64]) -> Result<()> {
+    if thread_ids.is_empty() {
+        return Ok(());
+    }
+    let splits = crate::db::repo::splits::list(conn)?;
+    if splits.is_empty() {
+        return Ok(());
+    }
+    let s = crate::db::repo::settings::get(conn)?;
+    let fallback = Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize);
+    for &tid in thread_ids {
+        reroute_after_change(conn, &splits, fallback, tid)?;
     }
     Ok(())
 }

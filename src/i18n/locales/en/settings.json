@@ -441,7 +441,8 @@
         "subject": "Subject",
         "label": "Has label",
         "isAutomated": "Automated",
-        "hasAttachment": "Has attachment"
+        "hasAttachment": "Has attachment",
+        "isStarred": "Starred"
       },
       "ops": {
         "contains": "contains",

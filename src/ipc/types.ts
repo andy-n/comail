@@ -281,7 +281,9 @@ export type RuleCondition =
   | { kind: "subject"; op: TextOp; value: string }
   | { kind: "label"; id: number }
   | { kind: "isAutomated"; value: boolean }
-  | { kind: "hasAttachment"; value: boolean };
+  | { kind: "hasAttachment"; value: boolean }
+  /** Some visible message outside Trash/Spam is (or none is) starred. */
+  | { kind: "isStarred"; value: boolean };
 
 /** Route key: "important" | "other" | "pending" | "label:<id>" | "split:<id>". */
 export type RouteKey = string;

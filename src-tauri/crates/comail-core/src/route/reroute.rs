@@ -470,15 +470,58 @@ mod tests {
         r.condition = Some(RuleCondition::Label { id: label });
         let rules = vec![r];
         crate::db::repo::labels::add_to_message(&c, msg, label).unwrap();
-        super::super::reroute_after_label_change(&c, &rules, Fallback::Off, t).unwrap();
+        super::super::reroute_after_change(&c, &rules, Fallback::Off, t).unwrap();
         assert_eq!(routed(&c, t).as_deref(), Some("split:1"));
         c.execute(
             "DELETE FROM message_labels WHERE message_id = ?1",
             params![msg],
         )
         .unwrap();
-        super::super::reroute_after_label_change(&c, &rules, Fallback::Off, t).unwrap();
+        super::super::reroute_after_change(&c, &rules, Fallback::Off, t).unwrap();
         assert_eq!(routed(&c, t), None);
+    }
+
+    #[test]
+    fn starring_moves_threads_in_and_out_of_starred_splits() {
+        use crate::models::ActionKind;
+        let mut c = testutil::conn();
+        testutil::seed_account(&c);
+        let (t, _) = testutil::seed_message(&c, "a@x.io", "hi", false);
+        let cond = RuleCondition::Any {
+            of: vec![RuleCondition::IsStarred { value: true }],
+        };
+        let sp = crate::db::repo::splits::save(
+            &c,
+            None,
+            "Starred",
+            0,
+            &SplitRuleQuery::default(),
+            Some(&cond),
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        let key = Some(format!("split:{}", sp.id));
+
+        // Local star / unstar actions re-route in the same transaction.
+        crate::apply_thread_action(&mut c, t, ActionKind::Star, None).unwrap();
+        assert_eq!(routed(&c, t), key);
+        crate::apply_thread_action(&mut c, t, ActionKind::Unstar, None).unwrap();
+        assert_eq!(routed(&c, t), None);
+
+        // Undoing the star moves the thread back out too.
+        let star = crate::apply_thread_action(&mut c, t, ActionKind::Star, None).unwrap();
+        assert_eq!(routed(&c, t), key);
+        let undo = crate::db::repo::actions::get(&c, star[0].0).unwrap().unwrap();
+        crate::revert_action(&mut c, &undo).unwrap();
+        assert_eq!(routed(&c, t), None);
+
+        // A star pulled from the server (sync's flag reconcile) re-routes too.
+        c.execute("UPDATE messages SET is_starred = 1 WHERE thread_id = ?1", params![t])
+            .unwrap();
+        super::super::reroute_threads_after_change(&c, &[t]).unwrap();
+        assert_eq!(routed(&c, t), key);
     }
 
     #[test]

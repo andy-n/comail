@@ -30,6 +30,7 @@ export function emptyLeaf(
       return { kind, id: firstLabelId ?? 0 };
     case "isAutomated":
     case "hasAttachment":
+    case "isStarred":
       return { kind, value: true };
   }
 }
@@ -117,6 +118,8 @@ export interface ConditionSubject {
   labelIds: number[];
   isAutomated: boolean | null;
   hasAttachment: boolean;
+  /** Some message outside Trash/Spam is starred. */
+  isStarred: boolean;
 }
 
 const fold = (s: string) =>
@@ -161,6 +164,8 @@ export function evaluate(c: RuleCondition, s: ConditionSubject): boolean {
       return s.isAutomated === c.value;
     case "hasAttachment":
       return s.hasAttachment === c.value;
+    case "isStarred":
+      return s.isStarred === c.value;
   }
 }
 

@@ -439,7 +439,8 @@
         "subject": "Objet",
         "label": "A le libellé",
         "isAutomated": "Automatisé",
-        "hasAttachment": "Pièce jointe"
+        "hasAttachment": "Pièce jointe",
+        "isStarred": "Suivi"
       },
       "ops": {
         "contains": "contient",

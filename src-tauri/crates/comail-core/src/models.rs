@@ -307,6 +307,15 @@ impl ActionKind {
             _ => return None,
         })
     }
+
+    /// Changes a fact split rules test (labels, star) without moving the
+    /// mail, so split routing must be re-checked afterwards.
+    pub fn changes_rule_facts(&self) -> bool {
+        matches!(
+            self,
+            ActionKind::Star | ActionKind::Unstar | ActionKind::AddLabel | ActionKind::RemoveLabel
+        )
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -462,6 +471,11 @@ pub enum RuleCondition {
     HasAttachment {
         value: bool,
     },
+    /// Any visible message outside Trash/Spam is (or none is) starred
+    /// (IMAP `\Flagged`), the same test as the Starred view.
+    IsStarred {
+        value: bool,
+    },
 }
 
 /// Limits enforced on save so a condition stays cheap to evaluate and editable.
@@ -566,7 +580,9 @@ impl RuleCondition {
                         errs.push(RuleConditionError::UnknownLabel { id: *id });
                     }
                 }
-                RuleCondition::IsAutomated { .. } | RuleCondition::HasAttachment { .. } => {}
+                RuleCondition::IsAutomated { .. }
+                | RuleCondition::HasAttachment { .. }
+                | RuleCondition::IsStarred { .. } => {}
             }
         }
         walk(self, user_label_ids, &mut errs);

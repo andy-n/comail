@@ -17,6 +17,7 @@ const LEAF_KINDS: LeafKind[] = [
   "label",
   "isAutomated",
   "hasAttachment",
+  "isStarred",
 ];
 const TEXT_OPS: TextOp[] = ["contains", "equals", "startsWith", "endsWith"];
 
@@ -285,6 +286,7 @@ function LeafValue({
       );
     case "isAutomated":
     case "hasAttachment":
+    case "isStarred":
       return (
         <Select
           aria-label={t("settings:splits.cond.value")}
@@ -330,6 +332,7 @@ export function describeCondition(
         return `${t("settings:splits.cond.fields.label")} ${labels.find((l) => l.id === n.id)?.name ?? `#${n.id}`}`;
       case "isAutomated":
       case "hasAttachment":
+      case "isStarred":
         return `${t(`settings:splits.cond.fields.${n.kind}`)}: ${t(n.value ? "settings:splits.cond.yes" : "settings:splits.cond.no")}`;
     }
   };

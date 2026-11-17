@@ -2914,14 +2914,16 @@ async fn reconcile_flags(ctx: &SyncCtx, session: &mut Session, folder: &Folder) 
         .write(move |conn| {
             let tx = conn.transaction()?;
             let mut changed_threads: Vec<i64> = Vec::new();
+            // Threads whose star or labels moved: split rules may test them.
+            let mut reroute: Vec<i64> = Vec::new();
             for (uid, flags) in &remote_flags {
                 if let Some(row) = repo::messages::by_folder_uid(&tx, folder_id, *uid as i64)? {
                     // Local pending intent wins over remote state.
                     if repo::actions::has_pending_for_message(&tx, row.id)? {
                         continue;
                     }
-                    let flags_changed =
-                        row.is_read != flags.seen || row.is_starred != flags.flagged;
+                    let star_changed = row.is_starred != flags.flagged;
+                    let flags_changed = row.is_read != flags.seen || star_changed;
                     if flags_changed {
                         repo::messages::set_flags(&tx, row.id, flags.seen, flags.flagged)?;
                     }
@@ -2933,10 +2935,14 @@ async fn reconcile_flags(ctx: &SyncCtx, session: &mut Session, folder: &Folder) 
                             if !changed_threads.contains(&tid) {
                                 changed_threads.push(tid);
                             }
+                            if (star_changed || labels_changed) && !reroute.contains(&tid) {
+                                reroute.push(tid);
+                            }
                         }
                     }
                 }
             }
+            crate::route::reroute_threads_after_change(&tx, &reroute)?;
             tx.commit()?;
             Ok(changed_threads)
         })

@@ -4122,6 +4122,7 @@ function mockConditionSubject(t: MockThread): ConditionSubject {
     labelIds: t.labels,
     isAutomated: inbound[0] ? inbound[0].listUnsubscribe != null : null,
     hasAttachment: t.messages.some((m) => !m.isDraft && m.attachments.length > 0),
+    isStarred: inView(t, "starred"),
   };
 }
 

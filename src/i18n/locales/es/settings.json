@@ -439,7 +439,8 @@
         "subject": "Asunto",
         "label": "Tiene etiqueta",
         "isAutomated": "Automatizado",
-        "hasAttachment": "Tiene adjunto"
+        "hasAttachment": "Tiene adjunto",
+        "isStarred": "Destacado"
       },
       "ops": {
         "contains": "contiene",

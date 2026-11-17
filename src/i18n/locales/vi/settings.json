@@ -439,7 +439,8 @@
         "subject": "Tiêu đề",
         "label": "Có nhãn",
         "isAutomated": "Tự động",
-        "hasAttachment": "Có tệp đính kèm"
+        "hasAttachment": "Có tệp đính kèm",
+        "isStarred": "Gắn sao"
       },
       "ops": {
         "contains": "chứa",

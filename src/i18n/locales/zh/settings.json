@@ -439,7 +439,8 @@
         "subject": "主题",
         "label": "包含标签",
         "isAutomated": "自动邮件",
-        "hasAttachment": "有附件"
+        "hasAttachment": "有附件",
+        "isStarred": "已加星标"
       },
       "ops": {
         "contains": "包含",

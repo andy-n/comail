@@ -1339,27 +1339,6 @@ impl Core {
             }
         }
 
-        // A label split ("has label Invoices") must follow manual labelling
-        // straight away, not only on the next full re-sort.
-        if matches!(args.kind, ActionKind::AddLabel | ActionKind::RemoveLabel) {
-            let thread_ids = args.thread_ids.clone();
-            self.db
-                .write(move |conn| {
-                    let splits = repo::splits::list(conn)?;
-                    if splits.is_empty() {
-                        return Ok(());
-                    }
-                    let s = repo::settings::get(conn)?;
-                    let fallback =
-                        route::Fallback::from_settings(s.auto_labels_enabled, s.ai_categorize);
-                    for tid in thread_ids {
-                        route::reroute_after_label_change(conn, &splits, fallback, tid)?;
-                    }
-                    Ok(())
-                })
-                .await?;
-        }
-
         self.bus.emit(CoreEvent::MailUpdated {
             thread_ids: args.thread_ids.clone(),
         });
@@ -5988,6 +5967,11 @@ fn apply_thread_action(
     }
 
     repo::threads::recompute(&tx, thread_id)?;
+    // A label or starred split ("has label Invoices", "is starred") follows
+    // manual labelling and starring straight away, in the same transaction.
+    if kind.changes_rule_facts() {
+        route::reroute_threads_after_change(&tx, &[thread_id])?;
+    }
     tx.commit()?;
     Ok(out)
 }
@@ -6116,6 +6100,10 @@ fn revert_action(
 
     if let Some(tid) = thread_id {
         repo::threads::recompute(&tx, tid)?;
+        // Undoing a star or label must undo the tab move it caused.
+        if ActionKind::from_str(&action.kind).is_some_and(|k| k.changes_rule_facts()) {
+            route::reroute_threads_after_change(&tx, &[tid])?;
+        }
     }
     tx.commit()?;
     Ok(thread_id)

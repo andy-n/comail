@@ -31,6 +31,9 @@ pub struct RuleSubject {
     /// `None` when the thread has no inbound message.
     pub latest_is_automated: Option<bool>,
     pub has_attachment: bool,
+    /// Some visible message outside Trash/Spam is starred (mirrors the
+    /// Starred view, so a star on discarded mail doesn't count).
+    pub is_starred: bool,
 }
 
 impl RuleSubject {
@@ -82,6 +85,14 @@ impl RuleSubject {
         s.label_ids = stmt
             .query_map(params![thread_id], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
+        s.is_starred = conn
+            .prepare_cached(
+                "SELECT EXISTS (
+                    SELECT 1 FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+                    WHERE vm.thread_id = ?1 AND vm.is_starred = 1
+                      AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))",
+            )?
+            .query_row(params![thread_id], |r| r.get(0))?;
         Ok(s)
     }
 }
@@ -214,6 +225,7 @@ pub fn eval(c: &RuleCondition, s: &RuleSubject, mut trace: Option<&mut Vec<LeafT
         RuleCondition::Label { id } => s.label_ids.contains(id),
         RuleCondition::IsAutomated { value } => s.latest_is_automated == Some(*value),
         RuleCondition::HasAttachment { value } => s.has_attachment == *value,
+        RuleCondition::IsStarred { value } => s.is_starred == *value,
     };
     if c.is_leaf() {
         if let Some(t) = trace {
@@ -407,6 +419,7 @@ mod tests {
             label_ids: [3].into_iter().collect(),
             latest_is_automated: Some(true),
             has_attachment: false,
+            is_starred: false,
         }
     }
 
@@ -712,5 +725,30 @@ mod tests {
                 .iter()
                 .any(|r| r.split_id == 1 && r.ai_check && !r.matched)
         );
+    }
+
+    #[test]
+    fn starred_leaf_follows_visible_stars_only() {
+        use crate::db::testutil;
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        c.execute(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,1,'Trash','trash')",
+            [],
+        )
+        .unwrap();
+        let (t, msg) = testutil::seed_message(&c, "a@x.io", "hi", false);
+        let starred = RuleCondition::IsStarred { value: true };
+        let unstarred = RuleCondition::IsStarred { value: false };
+        let s = RuleSubject::load(&c, t).unwrap();
+        assert!(!matches(&starred, &s));
+        assert!(matches(&unstarred, &s));
+        c.execute("UPDATE messages SET is_starred = 1 WHERE id = ?1", params![msg])
+            .unwrap();
+        assert!(matches(&starred, &RuleSubject::load(&c, t).unwrap()));
+        // A star on a message sitting in Trash doesn't star the conversation.
+        c.execute("UPDATE messages SET folder_id = 2 WHERE id = ?1", params![msg])
+            .unwrap();
+        assert!(!matches(&starred, &RuleSubject::load(&c, t).unwrap()));
     }
 }

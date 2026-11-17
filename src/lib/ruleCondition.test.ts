@@ -3,6 +3,7 @@ import type { RuleCondition } from "../ipc/types";
 import {
   type ConditionSubject,
   conditionProblems,
+  emptyLeaf,
   isMatchable,
   matches,
   queryToCondition,
@@ -16,6 +17,7 @@ const subject: ConditionSubject = {
   labelIds: [3],
   isAutomated: true,
   hasAttachment: false,
+  isStarred: true,
 };
 
 const sender = (
@@ -67,6 +69,14 @@ describe("condition tree", () => {
     const onlyNot: RuleCondition = { kind: "not", cond: sender("nobody") };
     expect(isMatchable(onlyNot)).toBe(false);
     expect(matches(onlyNot, subject)).toBe(false);
+  });
+
+  it("tests the starred flag", () => {
+    const starred: RuleCondition = { kind: "isStarred", value: true };
+    expect(matches(starred, subject)).toBe(true);
+    expect(matches(starred, { ...subject, isStarred: false })).toBe(false);
+    expect(matches({ kind: "isStarred", value: false }, subject)).toBe(false);
+    expect(emptyLeaf("isStarred")).toEqual({ kind: "isStarred", value: true });
   });
 
   it("reports problems and simplifies empty groups away", () => {
