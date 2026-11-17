@@ -13,6 +13,14 @@
   "bundle": {
     "showAll": "Xem tất cả trong {{name}}"
   },
+  "drag": {
+    "count_one": "{{count}} cuộc hội thoại",
+    "count_other": "{{count}} cuộc hội thoại",
+    "moveTo": "Chuyển sang {{name}}",
+    "cantDrop": "{{name}} được sắp xếp theo quy tắc",
+    "held_one": "{{count}} cuộc hội thoại vẫn ở chỗ cũ: {{name}} sắp xếp theo quy tắc",
+    "held_other": "{{count}} cuộc hội thoại vẫn ở chỗ cũ: {{name}} sắp xếp theo quy tắc"
+  },
   "splitPopover": {
     "title": "Tab mới",
     "fromSender": "Thư từ {{email}}",

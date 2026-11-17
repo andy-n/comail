@@ -16,6 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
 
 pub mod decide;
+pub mod manual;
 pub mod reroute;
 pub mod sql;
 pub use decide::{Decision, RouteExplanation, RuleSubject, decide, explain};

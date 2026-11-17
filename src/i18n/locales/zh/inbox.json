@@ -13,6 +13,14 @@
   "bundle": {
     "showAll": "在{{name}}中查看全部"
   },
+  "drag": {
+    "count_one": "{{count}} 个会话",
+    "count_other": "{{count}} 个会话",
+    "moveTo": "移至{{name}}",
+    "cantDrop": "{{name}}按规则分类",
+    "held_one": "{{count}} 个会话未移动：{{name}}按规则收纳它",
+    "held_other": "{{count}} 个会话未移动：{{name}}按规则收纳它们"
+  },
   "splitPopover": {
     "title": "新建分栏",
     "fromSender": "来自 {{email}} 的邮件",

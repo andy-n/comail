@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
 import { buildFolderTree, type FolderNode } from "../../lib/folders";
-import { inboxTabOrder } from "../../lib/splitOrder";
+import { inboxTabOrder, mergeTabOrder, moveTabByKey, orderedTabKey } from "../../lib/splitOrder";
+import type { TabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
+import { useDragReorder, type ReorderWiring } from "../../lib/useDragReorder";
 import {
   splitCount,
   useFolders,
@@ -11,6 +14,7 @@ import {
   useSplits,
   useUnreadCounts,
 } from "../../queries/hooks";
+import { persistTabOrder } from "../../queries/tabOrder";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi, type PanelKind } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
 import { AccountSwitcher, ACCOUNT_MENU_ATTR } from "./AccountSwitcher";
@@ -54,6 +58,22 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+
+  // Same tab order as the tab bar (lib/splitOrder). Rules routed into an
+  // existing tab own no tab, so they get no row either. Custom rows can be
+  // dragged to reorder; Important stays first and Other last.
+  const tabItems = useMemo(
+    () => inboxTabOrder(splits, labels, autoLabelsEnabled),
+    [splits, labels, autoLabelsEnabled],
+  );
+  const reorderKeys = useMemo(
+    () => tabItems.flatMap((it) => (it.kind === "important" || it.kind === "other" ? [] : [orderedTabKey(it)])),
+    [tabItems],
+  );
+  const reorder = useDragReorder("sidebar-tabs", (fromKey, toKey) => {
+    const next = moveTabByKey(mergeTabOrder(splits, labels), fromKey, toKey);
+    if (next) void persistTabOrder(next);
+  });
 
   const asideRef = useRef<HTMLElement>(null);
   // Docking consumes the temporary drawer state; shrinking must not unexpectedly
@@ -185,10 +205,8 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
           badge={counts?.inbox || undefined}
           onClick={() => go("inbox", null)}
         />
-        {/* Same order as the tab bar (lib/splitOrder). Rules routed into an
-            existing tab own no tab, so they get no row either. */}
         <div className="mb-1">
-          {inboxTabOrder(splits, labels, autoLabelsEnabled).map((item) => {
+          {tabItems.map((item) => {
             if (item.kind === "important" || item.kind === "other") {
               const sid = item.kind === "important" ? SPLIT_IMPORTANT : SPLIT_OTHER;
               return (
@@ -198,6 +216,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                   active={inboxActive && labelFilter == null && splitId === sid}
                   badge={counts?.[item.kind] || undefined}
                   indent
+                  dropRoute={item.kind}
                   onClick={() => go("inbox", sid)}
                 />
               );
@@ -210,6 +229,8 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                   active={inboxActive && labelFilter == null && splitId === item.id}
                   badge={splitCount(counts, item.id) || undefined}
                   indent
+                  dropRoute={`split:${item.id}`}
+                  reorder={reorder.wire(orderedTabKey(item), reorderKeys)}
                   onClick={() => go("inbox", item.id)}
                 />
               );
@@ -222,6 +243,8 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                 dotColor={item.label.color}
                 badge={counts?.labels[String(item.id)] || undefined}
                 indent
+                dropRoute={`label:${item.id}`}
+                reorder={reorder.wire(orderedTabKey(item), reorderKeys)}
                 onClick={() => {
                   openThread(null);
                   set({
@@ -363,6 +386,8 @@ function SideRow({
   badge,
   dotColor,
   kbd,
+  reorder,
+  dropRoute,
   onClick,
 }: {
   label: string;
@@ -372,21 +397,37 @@ function SideRow({
   dotColor?: string;
   /** keyboard hint shown on the right */
   kbd?: string;
+  /** Drag-to-reorder wiring (custom inbox tab rows only). */
+  reorder?: ReorderWiring;
+  /** Inbox tab rows: dragged mail dropped here moves into this tab. */
+  dropRoute?: TabRoute;
   onClick: () => void;
 }) {
+  const dropHere = useDropHighlight(dropRoute ?? null);
   return (
     <button
       data-nav
       data-active={active ? "true" : undefined}
-      className={`mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${NAV_FOCUS} ${
+      {...reorder?.attrs}
+      {...(dropRoute ? dropTargetProps(dropRoute, label) : undefined)}
+      onMouseDown={reorder?.onMouseDown}
+      className={`relative mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${NAV_FOCUS} ${
         indent ? "ps-7" : "ps-3"
       } ${
         active
           ? "bg-[var(--selected-bg)] font-medium text-ink"
           : "text-ink-muted hover:bg-bg2 hover:text-ink"
-      }`}
+      }${reorder?.dragging ? " opacity-40" : ""}${dropHere ? " co-drop-target" : ""}`}
       onClick={onClick}
     >
+      {reorder?.dropSide && (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-2 h-0.5 rounded-full bg-accent ${
+            reorder.dropSide === "before" ? "-top-px" : "-bottom-px"
+          }`}
+        />
+      )}
       {dotColor && (
         <span className="size-2 shrink-0 rounded-full" style={{ background: dotColor }} />
       )}

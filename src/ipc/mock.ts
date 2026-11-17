@@ -27,6 +27,8 @@ import type {
   FolderInfo,
   Label,
   MessageDetail,
+  MoveOutcome,
+  MoveUndo,
   RuleCondition,
   RuleTrace,
   PerformActionArgs,
@@ -55,6 +57,7 @@ import {
   matches as conditionMatches,
   queryToCondition,
 } from "../lib/ruleCondition";
+import { canDropOnTab, labelsAfterMove, splitDropLabels, type TabRoute } from "../lib/tabDrop";
 
 export const MOCK_MODE =
   typeof window !== "undefined" &&
@@ -1054,6 +1057,15 @@ const splits: SplitRule[] = [
       ],
     },
   },
+  // A label tab, like a topic label the user files by hand: mail can be
+  // dragged into it (the drop applies the label).
+  {
+    id: 3,
+    name: "Receipts",
+    position: 2,
+    query: {},
+    condition: { kind: "label", id: 4 },
+  },
 ];
 
 const labels: Label[] = [
@@ -1071,6 +1083,13 @@ const labels: Label[] = [
     color: "#d97706",
     keyword: "Follow_up",
     position: 2,
+  },
+  {
+    id: 4,
+    name: "Receipts",
+    color: "#0d9488",
+    keyword: "Receipts",
+    position: 3,
   },
   // System auto-categories (007 migration seeds)
   {
@@ -1111,6 +1130,7 @@ const labels: Label[] = [
 if (threads[0]) threads[0].labels = [1, 3];
 if (threads[1]) threads[1].labels = [2];
 if (threads[3]) threads[3].labels = [1];
+for (const t of threads) if (/^Your (invoice|DigitalOcean invoice)/.test(t.subject)) t.labels.push(4);
 
 /** Mirror of the Rust auto-label classifier, enough for demo fixtures. */
 function autoLabelOf(t: MockThread): number | null {
@@ -1473,6 +1493,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   inlineBundles: false,
+  showLabelChips: true,
   undoSendSeconds: 10,
   loadRemoteImages: true,
   aiBaseUrl: "https://openrouter.ai/api/v1",
@@ -1945,6 +1966,8 @@ function inSplit(t: MockThread, splitId: number | null | undefined): boolean {
   }
   if (t.routedTab === "important") return splitId === -1;
   if (t.routedTab === "other") return splitId === -2;
+  // Moved into an AI category by hand: it lives in that tab only.
+  if (t.routedTab?.startsWith("label:")) return false;
   if (matchesAnyCustomSplit(t)) return false;
   const automated = isAutomatedSender(threadSender(t));
   return splitId === -1 ? !automated : automated;
@@ -2110,6 +2133,42 @@ function performAction(args: PerformActionArgs): ActionResult {
   }
   undoLog.push({ actionIds, restore });
   return { actionIds };
+}
+
+/** Drag-and-drop move into a tab. Simplified `route::manual::plan_move`: a
+ *  matching sender/subject rule tab holds the thread, otherwise its labels
+ *  follow the target (see `labelsAfterMove`) and the route is pinned. */
+function mockMoveThreads(ids: number[], to: TabRoute): MoveOutcome {
+  if (!canDropOnTab(to, splits, labels)) {
+    throw new Error(`tab ${to} doesn't take dropped mail`);
+  }
+  const outcome: MoveOutcome = { moved: [], held: [], undo: { threads: [], senders: [] } };
+  for (const threadId of ids) {
+    const t = threads.find((x) => x.id === threadId);
+    if (!t || t.routedTab === to) continue;
+    const holder = splits.find(
+      (s) =>
+        s.target == null &&
+        splitDropLabels(s) == null &&
+        `split:${s.id}` !== to &&
+        matchesSplitRule(t, s),
+    );
+    if (holder) {
+      outcome.held.push({ threadId, splitId: holder.id });
+      continue;
+    }
+    const before = t.labels;
+    t.labels = labelsAfterMove(before, to, splits, labels);
+    outcome.undo.threads.push({
+      threadId,
+      routedTab: t.routedTab,
+      addedLabels: t.labels.filter((l) => !before.includes(l)),
+      removedLabels: before.filter((l) => !t.labels.includes(l)),
+    });
+    t.routedTab = to;
+    outcome.moved.push(threadId);
+  }
+  return outcome;
 }
 
 interface PendingSend {
@@ -3190,6 +3249,23 @@ export async function mockInvoke(
             : labels.find((x) => x.id === ref.id);
         if (row) row.position = i;
       });
+      return delay(undefined);
+    }
+
+    case "move_threads_to_tab":
+      return delay(mockMoveThreads(a.threadIds as number[], a.to as TabRoute));
+
+    case "undo_move_threads": {
+      const undo = a.undo as MoveUndo;
+      for (const u of undo.threads) {
+        const t = threads.find((x) => x.id === u.threadId);
+        if (!t) continue;
+        t.labels = [
+          ...t.labels.filter((l) => !u.addedLabels.includes(l)),
+          ...u.removedLabels.filter((l) => !t.labels.includes(l)),
+        ];
+        t.routedTab = u.routedTab;
+      }
       return delay(undefined);
     }
 

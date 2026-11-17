@@ -119,7 +119,8 @@
     "starred": "Starred",
     "unstarred": "Unstarred",
     "markedRead": "Marked read",
-    "markedUnread": "Marked unread"
+    "markedUnread": "Marked unread",
+    "movedToTab": "Moved to {{name}}"
   },
   "undo": {
     "tooLate": "Too late, message already sent",

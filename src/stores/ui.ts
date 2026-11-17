@@ -7,6 +7,7 @@ import type {
   ComposeMode,
   DraftAttachment,
   MessageDetail,
+  MoveUndo,
   Settings,
   SyncStatus,
   View,
@@ -112,7 +113,9 @@ export interface ComposerState {
 /** What Z undoes next. */
 export type Undoable =
   | { type: "action"; label: string }
-  | { type: "send"; actionId: number; toastId: number; reopen: ComposerState };
+  | { type: "send"; actionId: number; toastId: number; reopen: ComposerState }
+  /** Mail dragged into another tab; reverted by `undo_move_threads`. */
+  | { type: "move"; undo: MoveUndo };
 
 /**
  * splitId convention: -1 implicit "Important", -2 implicit "Other",

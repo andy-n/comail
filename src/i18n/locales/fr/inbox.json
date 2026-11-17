@@ -13,6 +13,14 @@
   "bundle": {
     "showAll": "Tout afficher dans {{name}}"
   },
+  "drag": {
+    "count_one": "{{count}} conversation",
+    "count_other": "{{count}} conversations",
+    "moveTo": "Déplacer vers {{name}}",
+    "cantDrop": "{{name}} est trié par une règle",
+    "held_one": "{{count}} conversation n'a pas bougé : {{name}} la trie par règle",
+    "held_other": "{{count}} conversations n'ont pas bougé : {{name}} les trie par règle"
+  },
   "splitPopover": {
     "title": "Nouvel onglet",
     "fromSender": "Messages de {{email}}",

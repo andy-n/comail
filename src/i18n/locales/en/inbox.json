@@ -13,6 +13,14 @@
   "bundle": {
     "showAll": "Show all in {{name}}"
   },
+  "drag": {
+    "count_one": "{{count}} conversation",
+    "count_other": "{{count}} conversations",
+    "moveTo": "Move to {{name}}",
+    "cantDrop": "{{name}} is sorted by a rule",
+    "held_one": "{{count}} conversation stayed put: {{name}} sorts it by rule",
+    "held_other": "{{count}} conversations stayed put: {{name}} sorts them by rule"
+  },
   "splitPopover": {
     "title": "New split",
     "fromSender": "Mail from {{email}}",

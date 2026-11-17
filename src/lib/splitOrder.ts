@@ -58,6 +58,47 @@ export function nextTabPosition(
   return positions.length === 0 ? 0 : Math.max(...positions) + 1;
 }
 
+/** Stable identity of a reorderable tab across splits and auto labels. */
+export const orderedTabKey = (tab: { kind: "split" | "label"; id: number }): string =>
+  `${tab.kind}:${tab.id}`;
+
+/** The `reorder_tabs` payload: every reorderable tab, top to bottom. */
+export function tabOrderPayload(items: OrderedTab[]): { kind: "split" | "label"; id: number }[] {
+  return items.map((it) => ({ kind: it.kind, id: it.id }));
+}
+
+/** Move the tab at `from` into slot `to` (Settings' arrows, keyboard and drag).
+ *  Null when nothing would change. */
+export function moveTab(items: OrderedTab[], from: number, to: number): OrderedTab[] | null {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return null;
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+/**
+ * Drop tab `fromKey` onto tab `toKey` where only some tabs are visible (the
+ * tab bar and sidebar hide rules routed into another tab, and auto labels when
+ * they are off). The dragged tab takes the target's visible slot: after it
+ * when moving down, before it when moving up. Hidden tabs keep their places,
+ * so their routing priority relative to the others is untouched. Matches
+ * {@link moveTab} when every tab is visible. Null when nothing would change.
+ */
+export function moveTabByKey(
+  items: OrderedTab[],
+  fromKey: string,
+  toKey: string,
+): OrderedTab[] | null {
+  const from = items.findIndex((it) => orderedTabKey(it) === fromKey);
+  const to = items.findIndex((it) => orderedTabKey(it) === toKey);
+  if (from < 0 || to < 0 || from === to) return null;
+  const next = items.filter((_, i) => i !== from);
+  const target = next.findIndex((it) => orderedTabKey(it) === toKey);
+  next.splice(from < to ? target + 1 : target, 0, items[from]);
+  return next;
+}
+
 /** Complete inbox tab order shared by rendering, direct hotkeys, and cycling.
  *  Rules that route their matches into an existing tab (a non-null `target`)
  *  own no tab of their own, so they are excluded here; Settings lists them via

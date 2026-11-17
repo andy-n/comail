@@ -586,6 +586,10 @@
     "label": "Mezclar los grupos en la lista",
     "hint": "Coloca cada grupo entre tu correo Importante según su mensaje más reciente y ábrelo en su sitio, en lugar de fijar los grupos arriba. Oculta la barra de pestañas en Importante."
   },
+  "showLabelChips": {
+    "label": "Mostrar etiquetas en la lista",
+    "hint": "Muestra las etiquetas de cada conversación antes del asunto. Los grupos y las pestañas de etiqueta ya indican la etiqueta, así que puedes desactivarlo para una lista más limpia."
+  },
   "groupByDate": {
     "label": "Agrupar por fecha",
     "hint": "Muestra encabezados Hoy / Ayer / … entre conversaciones en la lista."

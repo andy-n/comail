@@ -32,6 +32,7 @@ function ThreadRowImpl({
   jumpHint,
   avatarUi = false,
   photos = false,
+  showLabelChips = true,
 }: {
   thread: ThreadSummary;
   selected: boolean;
@@ -64,6 +65,8 @@ function ThreadRowImpl({
   avatarUi?: boolean;
   /** Avatar UI only: load Gravatar photos into the avatar. */
   photos?: boolean;
+  /** Settings → Show label chips: off hides the chips in both layouts. */
+  showLabelChips?: boolean;
 }) {
   const { t } = useTranslation();
   const unread = thread.unreadCount > 0;
@@ -138,7 +141,7 @@ function ThreadRowImpl({
 
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-base">
             {thread.isStarred && <StarIcon />}
-            <LabelChips labels={thread.labels} labelMap={labelMap} />
+            {showLabelChips && <LabelChips labels={thread.labels} labelMap={labelMap} />}
             <span className="shrink-0 truncate text-ink" style={{ maxWidth: "60%" }}>
               {thread.subject}
             </span>
@@ -169,7 +172,7 @@ function ThreadRowImpl({
           </span>
 
           <span className="flex min-w-0 flex-1 items-center gap-1.5 text-base">
-            <LabelChips labels={thread.labels} labelMap={labelMap} />
+            {showLabelChips && <LabelChips labels={thread.labels} labelMap={labelMap} />}
             <span className="min-w-0 truncate">
               <span className="text-ink">{thread.subject}</span>
               <span className="text-ink-faint">&ensp;{thread.snippet}</span>

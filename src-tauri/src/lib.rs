@@ -413,6 +413,8 @@ pub fn run() {
             commands::explain_route,
             commands::preview_split_condition,
             commands::reorder_tabs,
+            commands::move_threads_to_tab,
+            commands::undo_move_threads,
             commands::list_labels,
             commands::save_label,
             commands::delete_label,

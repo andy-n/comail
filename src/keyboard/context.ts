@@ -21,6 +21,7 @@ import {
   undoLastAction,
 } from "../queries/actions";
 import { queryClient } from "../queries/client";
+import { undoTabMove } from "../queries/tabMove";
 import type { ThreadDetail } from "../ipc/types";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
 
@@ -248,7 +249,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
       }
       return;
     }
-    const undone = await undoLastAction();
+    const undone = last.type === "move" ? await undoTabMove(last.undo) : await undoLastAction();
     state.pushToast({
       kind: undone ? "info" : "error",
       message: undone
@@ -482,6 +483,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         showSenderPhotos: true,
         showBundles: true,
         inlineBundles: false,
+        showLabelChips: true,
         undoSendSeconds: 10,
         loadRemoteImages: false,
         aiBaseUrl: "",

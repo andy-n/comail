@@ -119,7 +119,8 @@
     "starred": "Đã gắn sao",
     "unstarred": "Đã bỏ sao",
     "markedRead": "Đã đánh dấu đã đọc",
-    "markedUnread": "Đã đánh dấu chưa đọc"
+    "markedUnread": "Đã đánh dấu chưa đọc",
+    "movedToTab": "Đã chuyển sang {{name}}"
   },
   "undo": {
     "tooLate": "Quá muộn, thư đã được gửi",

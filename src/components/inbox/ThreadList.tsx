@@ -12,17 +12,23 @@ import type { Label, ThreadSummary } from "../../ipc/types";
 import { buildCommandContext } from "../../keyboard/context";
 import { primaryCorrespondent } from "../../lib/format";
 import { buildListItems, bundledThreadIds, type Bundle, type SectionHeader } from "../../lib/listItems";
-import { prefetchThread } from "../../queries/hooks";
+import { pastThreshold, swallowNextClick } from "../../lib/pointerDrag";
+import { tabRoute, type TabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, pickUpThreads } from "../../lib/threadDrag";
+import { prefetchThread, useSettings } from "../../queries/hooks";
 import { useUi } from "../../stores/ui";
 import { Button } from "../ui/Button";
 import { BundleRow } from "./BundleRow";
 import { ContactPane } from "./ContactPane";
+import { ThreadDragChip } from "./ThreadDragChip";
 import { ThreadRow, type AccountMeta, type QuickAction } from "./ThreadRow";
 
 // Superhuman-like density: one line per thread, ~36px, so a large screen
 // shows a full page of mail instead of a handful of tall rows.
 const ROW_HEIGHT = 40;
 const AVATAR_ROW_HEIGHT = 42;
+/** Press-and-hold on a row this long (without moving) picks the mail up. */
+const HOLD_MS = 300;
 
 type ThreadListProps = {
   /** Flattened thread summaries in display order. */
@@ -56,6 +62,10 @@ type ThreadListProps = {
   /** Ungrouped lists only: a header row above each keyed thread (search
    *  results' "Partial matches" / "Related" sections). */
   sections?: ReadonlyMap<number, SectionHeader>;
+  /** Inbox: rows can be picked up (press and hold, or Option/Alt-drag) and
+   *  dropped on another tab, bundle or sidebar row. The tab this list shows,
+   *  or null when it isn't one tab; omit to turn dragging mail off. */
+  dragSource?: TabRoute | null;
 };
 
 /**
@@ -79,6 +89,7 @@ export function ThreadList({
   onOpenBundle,
   onShowAllBundle,
   sections,
+  dragSource,
 }: ThreadListProps) {
   const { t } = useTranslation();
   const selectedThreadId = useUi((s) => s.selectedThreadId);
@@ -88,6 +99,8 @@ export function ThreadList({
   const selectThread = useUi((s) => s.selectThread);
   const openThread = useUi((s) => s.openThread);
   const toggleSelect = useUi((s) => s.toggleSelect);
+  const { data: settings } = useSettings();
+  const showLabelChips = settings?.showLabelChips !== false;
 
   // Brief leave animation: keep removed rows for 150ms, action already committed.
   const [rows, setRows] = useState<ThreadSummary[]>(threads);
@@ -154,6 +167,29 @@ export function ThreadList({
 
   // Active gutter-drag state (null when not dragging).
   const dragRef = useRef<{ startId: number; base: number[]; moved: boolean } | null>(null);
+  // Mail drag: the list's own tab, and each expanded bundle row's tab (an
+  // inline bundle's threads come from that tab, not the Important list).
+  const dragSourceRef = useRef(dragSource);
+  dragSourceRef.current = dragSource;
+  const nestedBundle = useMemo(
+    () =>
+      new Map(
+        inlineBundles && bundles ? bundles.flatMap((b) => b.threads.map((th) => [th.id, b] as const)) : [],
+      ),
+    [inlineBundles, bundles],
+  );
+  const nestedTabRef = useRef<ReadonlyMap<number, TabRoute | null>>(new Map());
+  nestedTabRef.current = useMemo(
+    () => new Map([...nestedBundle].map(([id, b]) => [id, tabRoute(b)])),
+    [nestedBundle],
+  );
+  // Dropping on an expanded bundle's rows (or its "show all" row) files into
+  // that bundle; anywhere else on the Important list with bundles, Important.
+  const dragOn = dragSource !== undefined;
+  const bundleDrop = (b: Bundle | undefined) => {
+    const route = dragOn && b ? tabRoute(b) : null;
+    return b && route ? dropTargetProps(route, b.name) : undefined;
+  };
 
   // Stable per-row handlers so memoized ThreadRows don't re-render on hover.
   const handleToggleCheck = useCallback((id: number) => toggleSelect(id), [toggleSelect]);
@@ -236,8 +272,17 @@ export function ThreadList({
   // callers below). Virtualization unmounts off-screen rows, so the hovered
   // index is derived from pointer Y against the scroll container rather than
   // per-row events.
-  const beginSweep = useCallback((id: number, toggleOnTap: boolean) => {
+  //
+  // A row-body press can instead pick the mail up to drop on another tab:
+  // hold still for HOLD_MS (or drag with Option/Alt held). Moving right away
+  // stays a sweep, so the two gestures never compete.
+  const beginSweep = useCallback((id: number, toggleOnTap: boolean, e: ReactMouseEvent) => {
     const el = scrollRef.current;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const canPickUp = !toggleOnTap && dragSourceRef.current !== undefined;
+    // Row presses wait for real movement (or the hold) before sweeping.
+    let undecided = !toggleOnTap;
     dragRef.current = { startId: id, base: useUi.getState().selection, moved: false };
     useUi.getState().set({ selectAnchorId: id });
     el?.classList.add("select-none");
@@ -251,9 +296,44 @@ export function ThreadList({
       return Math.max(0, Math.min(Math.floor(y / rowHeightRef.current), itemsRef.current.length - 1));
     };
 
+    const stopSweep = () => {
+      clearTimeout(hold);
+      dragRef.current = null;
+      el?.classList.remove("select-none");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    // Hand the press over to the mail drag: the pressed row, or the whole
+    // selection when the row is part of it.
+    const pickUp = (x: number, y: number, moved: boolean) => {
+      stopSweep();
+      const selection = useUi.getState().selection;
+      const ids = selection.includes(id) ? selection : [id];
+      const listTab = dragSourceRef.current ?? null;
+      pickUpThreads({
+        ids,
+        subject: rowsRef.current.find((r) => r.id === id)?.subject ?? "",
+        from: new Set(ids.map((tid) => nestedTabRef.current.get(tid) ?? listTab)),
+        x,
+        y,
+        moved,
+      });
+    };
+    const hold = canPickUp ? setTimeout(() => undecided && pickUp(x0, y0, false), HOLD_MS) : undefined;
+
     const onMove = (ev: MouseEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
+      if (undecided) {
+        if (!pastThreshold(x0, y0, ev.clientX, ev.clientY)) return;
+        undecided = false;
+        clearTimeout(hold);
+        if (canPickUp && e.altKey) {
+          pickUp(ev.clientX, ev.clientY, true);
+          return;
+        }
+      }
       const list = itemsRef.current;
       const startIdx = list.findIndex((it) => it.kind === "thread" && it.thread.id === drag.startId);
       if (startIdx < 0) return;
@@ -267,20 +347,11 @@ export function ThreadList({
 
     const onUp = () => {
       const drag = dragRef.current;
-      dragRef.current = null;
-      el?.classList.remove("select-none");
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      stopSweep();
       if (drag?.moved) {
         // A real sweep happened: swallow the trailing click so releasing back on
-        // the start row doesn't also open it. Self-removes if no click follows.
-        const swallow = (ev: MouseEvent) => {
-          ev.stopPropagation();
-          ev.preventDefault();
-          window.removeEventListener("click", swallow, true);
-        };
-        window.addEventListener("click", swallow, true);
-        setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+        // the start row doesn't also open it.
+        swallowNextClick();
       } else if (toggleOnTap && drag) {
         // A press with no movement in the gutter is a plain checkbox click.
         useUi.getState().toggleSelect(drag.startId);
@@ -292,15 +363,19 @@ export function ThreadList({
   }, []);
 
   // Gutter press: sweep, or toggle this one row on a no-move tap.
-  const onGutterDown = useCallback((id: number) => beginSweep(id, true), [beginSweep]);
+  const onGutterDown = useCallback(
+    (id: number, e: ReactMouseEvent) => beginSweep(id, true, e),
+    [beginSweep],
+  );
 
-  // Row-body press: drag over subjects/names to sweep a range. Modifier presses
-  // fall through to the click handler (Shift range / Cmd toggle), and a no-move
-  // press stays a plain click that opens the thread.
+  // Row-body press: drag over subjects/names to sweep a range, or hold to pick
+  // the mail up. Modifier presses fall through to the click handler (Shift
+  // range / Cmd toggle), and a no-move press stays a plain click that opens
+  // the thread.
   const onRowDown = useCallback(
     (id: number, e: ReactMouseEvent) => {
       if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey) return;
-      beginSweep(id, false);
+      beginSweep(id, false, e);
     },
     [beginSweep],
   );
@@ -415,6 +490,7 @@ export function ThreadList({
     <div className="relative flex min-h-0 flex-1">
       <div
         ref={scrollRef}
+        {...(dragOn && bundles ? dropTargetProps("important", t("inbox:split.important")) : undefined)}
         // Superhuman: the list is a plain white sheet; only the side pane is tinted.
         className="min-h-0 flex-1 overflow-y-auto bg-bg1"
       >
@@ -445,7 +521,12 @@ export function ThreadList({
             }
             if (item.kind === "bundleMore") {
               return (
-                <div key={`m-${item.bundle.key}`} className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`} style={style}>
+                <div
+                  key={`m-${item.bundle.key}`}
+                  {...bundleDrop(item.bundle)}
+                  className={`absolute inset-x-0${shifting ? " co-row-shift" : ""}`}
+                  style={style}
+                >
                   <button
                     type="button"
                     className="co-row flex h-full w-full cursor-default items-center ps-16 pe-5 text-sm text-ink-muted hover:text-ink"
@@ -460,6 +541,7 @@ export function ThreadList({
             return (
               <div
                 key={th.id}
+                {...(item.nested ? bundleDrop(nestedBundle.get(th.id)) : undefined)}
                 className={`absolute inset-x-0${item.nested ? " ps-8" : ""}${shifting ? " co-row-shift" : ""}`}
                 style={style}
               >
@@ -483,6 +565,7 @@ export function ThreadList({
                   jumpHint={jumpNumbers?.get(th.id)}
                   avatarUi={avatarUi}
                   photos={photos}
+                  showLabelChips={showLabelChips}
                 />
               </div>
             );
@@ -492,6 +575,7 @@ export function ThreadList({
           <div className="py-3 text-center text-sm text-ink-faint">{t("common:loading")}</div>
         )}
       </div>
+      {dragOn && <ThreadDragChip />}
 
       {!avatarUi && (
         <ContactPane

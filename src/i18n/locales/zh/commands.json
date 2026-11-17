@@ -119,7 +119,8 @@
     "starred": "已加星标",
     "unstarred": "已取消星标",
     "markedRead": "已标记为已读",
-    "markedUnread": "已标记为未读"
+    "markedUnread": "已标记为未读",
+    "movedToTab": "已移至{{name}}"
   },
   "undo": {
     "tooLate": "太晚了，邮件已发送",

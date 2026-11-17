@@ -13,6 +13,14 @@
   "bundle": {
     "showAll": "Ver todo en {{name}}"
   },
+  "drag": {
+    "count_one": "{{count}} conversación",
+    "count_other": "{{count}} conversaciones",
+    "moveTo": "Mover a {{name}}",
+    "cantDrop": "{{name}} se ordena por una regla",
+    "held_one": "{{count}} conversación no se movió: {{name}} la ordena por regla",
+    "held_other": "{{count}} conversaciones no se movieron: {{name}} las ordena por regla"
+  },
   "splitPopover": {
     "title": "Nueva pestaña",
     "fromSender": "Correo de {{email}}",

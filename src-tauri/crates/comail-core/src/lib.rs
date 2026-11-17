@@ -4334,6 +4334,43 @@ impl Core {
         Ok(())
     }
 
+    /// Drag-and-drop "move to tab": put each thread into inbox tab `to` (a
+    /// label split, an AI category, Important or Other). Label changes go
+    /// through the normal label actions, so they sync to IMAP as keywords.
+    /// Threads a rule the drop can't undo keeps in place are reported in
+    /// `held`; `undo` reverts the whole move ([`Core::undo_move_threads`]).
+    pub async fn move_threads_to_tab(
+        &self,
+        thread_ids: Vec<i64>,
+        to: RouteKey,
+    ) -> Result<route::manual::MoveOutcome> {
+        let (outcome, accounts) = self
+            .db
+            .write(move |conn| apply_tab_move(conn, &thread_ids, to))
+            .await?;
+        self.bus.emit(CoreEvent::MailUpdated {
+            thread_ids: outcome.moved.clone(),
+        });
+        for acc in accounts {
+            self.nudge(Some(acc), || SyncCmd::RunActions).await;
+        }
+        Ok(outcome)
+    }
+
+    /// Revert a [`Core::move_threads_to_tab`]: take back the labels it added,
+    /// restore the ones it removed, and put routes and sender verdicts back.
+    pub async fn undo_move_threads(&self, undo: route::manual::MoveUndo) -> Result<()> {
+        let (thread_ids, accounts) = self
+            .db
+            .write(move |conn| revert_tab_move(conn, &undo))
+            .await?;
+        self.bus.emit(CoreEvent::MailUpdated { thread_ids });
+        for acc in accounts {
+            self.nudge(Some(acc), || SyncCmd::RunActions).await;
+        }
+        Ok(())
+    }
+
     pub async fn list_labels(&self) -> Result<Vec<Label>> {
         self.db.read(|conn| repo::labels::list(conn)).await
     }
@@ -5447,6 +5484,9 @@ async fn await_sync_passes(
 }
 
 #[cfg(test)]
+mod tab_move_tests;
+
+#[cfg(test)]
 mod sync_now_wait_tests {
     use super::*;
     use std::time::{Duration, Instant};
@@ -5729,6 +5769,162 @@ pub(crate) fn enqueue_move(
         &payload,
         None,
     )
+}
+
+/// Label action on one thread through [`apply_thread_action`] (local change +
+/// queued IMAP keyword), collecting the accounts whose queue needs a nudge.
+fn label_thread(
+    conn: &mut rusqlite::Connection,
+    thread_id: i64,
+    label_id: i64,
+    add: bool,
+    accounts: &mut Vec<i64>,
+) -> Result<()> {
+    let kind = if add {
+        ActionKind::AddLabel
+    } else {
+        ActionKind::RemoveLabel
+    };
+    let params = ActionParams {
+        wake_at: None,
+        target_folder_id: None,
+        label_id: Some(label_id),
+    };
+    for (_, account_id) in apply_thread_action(conn, thread_id, kind, Some(&params))? {
+        if !accounts.contains(&account_id) {
+            accounts.push(account_id);
+        }
+    }
+    Ok(())
+}
+
+/// Execute [`Core::move_threads_to_tab`]: plan each thread with
+/// [`route::manual::plan_move`], then apply its steps. Returns the outcome and
+/// the accounts with newly queued actions.
+fn apply_tab_move(
+    conn: &mut rusqlite::Connection,
+    thread_ids: &[i64],
+    to: RouteKey,
+) -> Result<(route::manual::MoveOutcome, Vec<i64>)> {
+    use route::manual::{
+        Category, HeldThread, MoveFacts, MovePlan, MoveStep, SenderUndo, ThreadUndo,
+    };
+    let splits = repo::splits::list(conn)?;
+    let categories: Vec<Category> = repo::labels::list(conn)?
+        .into_iter()
+        .filter(|l| l.is_auto)
+        .map(|l| Category {
+            id: l.id,
+            keyword: l.keyword,
+        })
+        .collect();
+    let not_droppable = || CoreError::Other(format!("tab {to} doesn't take dropped mail"));
+    if !route::manual::droppable(to, &splits, &categories) {
+        return Err(not_droppable());
+    }
+
+    let mut outcome = route::manual::MoveOutcome::default();
+    let mut accounts = Vec::new();
+    for &thread_id in thread_ids {
+        let subject = route::RuleSubject::load(conn, thread_id)?;
+        let routed_tab: Option<String> = conn
+            .query_row(
+                "SELECT routed_tab FROM threads WHERE id = ?1",
+                rusqlite::params![thread_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let sender = route::thread_facts(conn, thread_id)?.map(|f| f.from_addr);
+        let facts = MoveFacts {
+            subject: &subject,
+            routed_tab: routed_tab.as_deref(),
+            sender: sender.as_deref(),
+        };
+        let steps = match route::manual::plan_move(to, &facts, &splits, &categories) {
+            Err(_) => return Err(not_droppable()),
+            Ok(MovePlan::AlreadyThere) => continue,
+            Ok(MovePlan::HeldBy(split_id)) => {
+                outcome.held.push(HeldThread {
+                    thread_id,
+                    split_id,
+                });
+                continue;
+            }
+            Ok(MovePlan::Steps(steps)) => steps,
+        };
+        let mut undo = ThreadUndo {
+            thread_id,
+            routed_tab,
+            added_labels: Vec::new(),
+            removed_labels: Vec::new(),
+        };
+        for step in steps {
+            match step {
+                MoveStep::AddLabel(label_id) => {
+                    label_thread(conn, thread_id, label_id, true, &mut accounts)?;
+                    undo.added_labels.push(label_id);
+                }
+                MoveStep::RemoveLabel(label_id) => {
+                    label_thread(conn, thread_id, label_id, false, &mut accounts)?;
+                    undo.removed_labels.push(label_id);
+                }
+                // The planner replayed the rules on the new labels, so this is
+                // the route a reroute would pick (or, for categories and
+                // Important/Other, the one no rule decides).
+                MoveStep::Route(key) => route::apply_tab(conn, thread_id, Some(&key.to_string()))?,
+                MoveStep::CacheSender { key, keyword } => {
+                    if !outcome.undo.senders.iter().any(|s| s.key == key) {
+                        let prior: Option<String> = conn
+                            .query_row(
+                                "SELECT route_key FROM route_cache WHERE sender_domain = ?1",
+                                rusqlite::params![key],
+                                |r| r.get(0),
+                            )
+                            .optional()?;
+                        outcome.undo.senders.push(SenderUndo {
+                            key: key.clone(),
+                            keyword: prior,
+                        });
+                    }
+                    route::cache_put(conn, &key, &keyword)?;
+                }
+            }
+        }
+        outcome.moved.push(thread_id);
+        outcome.undo.threads.push(undo);
+    }
+    Ok((outcome, accounts))
+}
+
+/// Execute [`Core::undo_move_threads`]. Returns the threads touched and the
+/// accounts with newly queued actions.
+fn revert_tab_move(
+    conn: &mut rusqlite::Connection,
+    undo: &route::manual::MoveUndo,
+) -> Result<(Vec<i64>, Vec<i64>)> {
+    let mut accounts = Vec::new();
+    for t in &undo.threads {
+        for &label_id in &t.added_labels {
+            label_thread(conn, t.thread_id, label_id, false, &mut accounts)?;
+        }
+        for &label_id in &t.removed_labels {
+            label_thread(conn, t.thread_id, label_id, true, &mut accounts)?;
+        }
+        route::apply_tab(conn, t.thread_id, t.routed_tab.as_deref())?;
+    }
+    for s in &undo.senders {
+        match &s.keyword {
+            Some(keyword) => route::cache_put(conn, &s.key, keyword)?,
+            None => {
+                conn.execute(
+                    "DELETE FROM route_cache WHERE sender_domain = ?1",
+                    rusqlite::params![s.key],
+                )?;
+            }
+        }
+    }
+    Ok((undo.threads.iter().map(|t| t.thread_id).collect(), accounts))
 }
 
 /// Optimistic local mutation + enqueue, in one transaction.

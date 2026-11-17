@@ -1,10 +1,26 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { activeInboxTabKey, inboxTabOrder } from "../../lib/splitOrder";
+import {
+  activeInboxTabKey,
+  inboxTabOrder,
+  mergeTabOrder,
+  moveTabByKey,
+} from "../../lib/splitOrder";
+import { tabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
+import { useDragReorder, type ReorderWiring } from "../../lib/useDragReorder";
 import { useModHeld } from "../../lib/useModHeld";
 import { splitCount, useLabels, useSettings, useSplits, useUnreadCounts } from "../../queries/hooks";
+import { persistTabOrder } from "../../queries/tabOrder";
 import { hasNewMail, useTabSeen } from "../../stores/tabSeen";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
+
+/** `reorder_tabs` identity of a bar tab; null for the pinned Important / Other. */
+function reorderKeyOf(tab: { splitId?: number; labelId?: number }): string | null {
+  if (tab.labelId != null) return `label:${tab.labelId}`;
+  if (tab.splitId != null && tab.splitId > 0) return `split:${tab.splitId}`;
+  return null;
+}
 
 export function SplitTabs() {
   const { t } = useTranslation();
@@ -34,6 +50,16 @@ export function SplitTabs() {
       }),
     [splits, labels, autoLabels, t],
   );
+
+  // Drag a custom tab to reorder it; Important stays first and Other last.
+  const reorderKeys = useMemo(
+    () => tabs.flatMap((tab) => reorderKeyOf(tab) ?? []),
+    [tabs],
+  );
+  const reorder = useDragReorder("tab-bar", (fromKey, toKey) => {
+    const next = moveTabByKey(mergeTabOrder(splits, labels), fromKey, toKey);
+    if (next) void persistTabOrder(next);
+  });
 
   // null = the sidebar's unsplit "Inbox": no tab is highlighted (see activeInboxTabKey).
   const activeKey = activeInboxTabKey(splitId, labelFilter);
@@ -96,23 +122,28 @@ export function SplitTabs() {
         className="flex items-center gap-1"
         onKeyDown={onKeyDown}
       >
-        {tabs.map((tab, index) => (
-          <SplitTab
-            key={tab.key}
-            ref={(el) => {
-              if (el) tabRefs.current.set(tab.key, el);
-              else tabRefs.current.delete(tab.key);
-            }}
-            name={tab.name}
-            unread={tabCounts[tab.key]}
-            hasNew={activeKey !== tab.key && hasNewMail(seen, tab.key, tabCounts[tab.key] ?? 0)}
-            keyHint={index < 9 ? String(index + 1) : undefined}
-            showKeyHint={modHeld}
-            active={activeKey === tab.key}
-            focusable={focusKey === tab.key}
-            onClick={() => selectInboxTab(tab)}
-          />
-        ))}
+        {tabs.map((tab, index) => {
+          const rk = reorderKeyOf(tab);
+          return (
+            <SplitTab
+              key={tab.key}
+              ref={(el) => {
+                if (el) tabRefs.current.set(tab.key, el);
+                else tabRefs.current.delete(tab.key);
+              }}
+              name={tab.name}
+              unread={tabCounts[tab.key]}
+              hasNew={activeKey !== tab.key && hasNewMail(seen, tab.key, tabCounts[tab.key] ?? 0)}
+              keyHint={index < 9 ? String(index + 1) : undefined}
+              showKeyHint={modHeld}
+              active={activeKey === tab.key}
+              focusable={focusKey === tab.key}
+              onClick={() => selectInboxTab(tab)}
+              reorder={rk == null ? undefined : reorder.wire(rk, reorderKeys)}
+              tab={tab}
+            />
+          );
+        })}
       </div>
       {/* Hidden on narrow windows, where the tabs need the room. */}
       <span className="ms-auto hidden pb-1 text-xs whitespace-nowrap text-ink-faint min-[900px]:inline">
@@ -132,6 +163,8 @@ function SplitTab({
   active,
   focusable,
   onClick,
+  reorder,
+  tab,
 }: {
   ref: (el: HTMLButtonElement | null) => void;
   name: string;
@@ -146,10 +179,16 @@ function SplitTab({
   /** the roving-tabindex stop of the tablist */
   focusable: boolean;
   onClick: () => void;
+  /** Drag-to-reorder wiring; absent on the pinned Important / Other tabs. */
+  reorder?: ReorderWiring;
+  /** The tab's split / auto-label id: dragged mail can be dropped on it. */
+  tab: { splitId?: number; labelId?: number };
 }) {
   const { t } = useTranslation();
   const count = unread ?? 0;
   const hint = showKeyHint && keyHint;
+  const route = tabRoute(tab);
+  const dropHere = useDropHighlight(route);
   return (
     <button
       ref={ref}
@@ -157,8 +196,13 @@ function SplitTab({
       aria-selected={active}
       tabIndex={focusable ? 0 : -1}
       title={name}
+      {...reorder?.attrs}
+      {...(route ? dropTargetProps(route, name) : undefined)}
       // A click selects without moving focus, so Tab keeps cycling splits.
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        reorder?.onMouseDown(e);
+      }}
       onClick={onClick}
       className={`relative flex shrink-0 items-center gap-1.5 px-3 pt-3 pb-2.5 text-md whitespace-nowrap transition-colors ${
         active
@@ -166,8 +210,16 @@ function SplitTab({
           : hasNew
             ? "text-ink-muted"
             : "text-ink-faint hover:text-ink-muted"
-      }`}
+      }${reorder?.dragging ? " opacity-40" : ""}${dropHere ? " co-drop-target rounded-control" : ""}`}
     >
+      {reorder?.dropSide && (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-y-2 w-0.5 rounded-full bg-accent ${
+            reorder.dropSide === "before" ? "-start-0.5" : "-end-0.5"
+          }`}
+        />
+      )}
       {hasNew && (
         <>
           <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />

@@ -586,6 +586,10 @@
     "label": "Mêler les groupes à la liste",
     "hint": "Place chaque groupe parmi vos e-mails Importants selon son message le plus récent et l'ouvre sur place, au lieu d'épingler les groupes en haut. Masque la barre d'onglets dans Important."
   },
+  "showLabelChips": {
+    "label": "Afficher les pastilles de libellé",
+    "hint": "Affiche les libellés de chaque conversation avant son objet. Les groupes et les onglets de libellé indiquent déjà le libellé : désactivez-les pour une liste plus épurée."
+  },
   "groupByDate": {
     "label": "Grouper par date",
     "hint": "Afficher des en-têtes Aujourd'hui / Hier / … entre les conversations dans la liste."

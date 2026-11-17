@@ -312,6 +312,22 @@ textarea {
 .co-row-shift {
   transition: top 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* A pointer drag is in progress (tab reorder, mail onto a tab): one cursor
+   for the whole window and no text selection. See lib/pointerDrag. */
+html.co-dragging,
+html.co-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+html.co-dragging.co-no-drop,
+html.co-dragging.co-no-drop * {
+  cursor: no-drop !important;
+}
+/* A tab, bundle or sidebar row the dragged mail would land in. */
+.co-drop-target {
+  background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .co-spinner {
   animation: co-spin 0.9s linear infinite;
 }

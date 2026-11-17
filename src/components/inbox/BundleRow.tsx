@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { Address, ThreadSummary } from "../../ipc/types";
 import { addressName, primaryCorrespondent } from "../../lib/format";
 import type { Bundle } from "../../lib/listItems";
+import { tabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
 import { Icon } from "../ui/Icon";
 import { Avatar } from "./Avatar";
 
@@ -51,12 +53,16 @@ function BundleRowImpl({
   const { unread } = bundle;
   const count = bundle.count ?? 0;
   const inline = expanded !== undefined;
+  // Mail dragged onto the row moves into this bundle's tab.
+  const route = tabRoute(bundle);
+  const dropHere = useDropHighlight(route);
 
   return (
     <div
       role={inline ? "button" : undefined}
       aria-expanded={inline ? expanded : undefined}
-      className="co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4"
+      {...(route ? dropTargetProps(route, bundle.name) : undefined)}
+      className={`co-row flex h-full cursor-default items-center gap-3 pr-5 pl-4${dropHere ? " co-drop-target" : ""}`}
       onClick={() => onOpen(bundle)}
     >
       <span className="flex w-5 shrink-0 items-center justify-center">
