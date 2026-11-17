@@ -24,6 +24,14 @@ ignore = [
   { id = "RUSTSEC-2026-0459", reason = "bundled SQLite WAL bug needs an attacker-written db + -wal pair inside the user's own app data dir (local attacker only); clears with rusqlite >= 0.41" },
   { id = "RUSTSEC-2026-0486", reason = "rustix xattr unsoundness: only via gethostname <- mail-builder; xattr APIs are not used" },
   { id = "RUSTSEC-2026-0386", reason = "tokio AsyncFd I/O-safety: comail never constructs AsyncFd from foreign fds" },
+  # zip 8.6.0 now only enters through candle-core (calamine 0.38 and comail use zip 9.0.5).
+  # candle reads zip only for .npz/.pth weights; comail loads model.safetensors only
+  # (embed/mod.rs:203-205), and never from mail input. Drops when candle moves to zip >= 9.
+  { id = "RUSTSEC-2026-0545", reason = "zip 8.x via candle-core npz/pth readers only; comail loads safetensors (embed/mod.rs:205)" },
+  { id = "RUSTSEC-2026-0546", reason = "zip 8.x via candle-core: ZipArchive::extract never called" },
+  { id = "RUSTSEC-2026-0547", reason = "zip 8.x via candle-core npz/pth readers only; no mail-supplied archive reaches zip 8" },
+  { id = "RUSTSEC-2026-0548", reason = "zip 8.x via candle-core: ZipStreamReader not used" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained notice, no safe upgrade exists; used for date math throughout. Track a replacement; no known vulnerability" },
 ]
 
 [licenses]
