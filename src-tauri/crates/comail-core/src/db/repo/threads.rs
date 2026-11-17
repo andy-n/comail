@@ -249,25 +249,28 @@ pub(super) const HAS_VISIBLE_MAIL: &str = "EXISTS (
     SELECT 1 FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
     WHERE vm.thread_id = t.id AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
 
-/// A star on discarded mail must not qualify a live, unstarred reply.
-pub(super) const HAS_VISIBLE_STAR: &str = "EXISTS (
-    SELECT 1 FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
-    WHERE vm.thread_id = t.id AND vm.is_starred = 1
-      AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
+/// Threads with a starred message outside Trash/Spam (a star on discarded mail
+/// must not qualify a live, unstarred reply). Built once as a set from the
+/// partial starred index (migration 037) instead of a probe per thread:
+/// starred mail is a handful of messages, the mailbox can be 100k+ threads.
+pub(super) const STARRED_THREADS: &str = "t.id IN (
+    SELECT vm.thread_id FROM visible_messages vm LEFT JOIN folders vf ON vf.id = vm.folder_id
+    WHERE vm.is_starred = 1 AND COALESCE(vf.role, '') NOT IN ('trash', 'spam'))";
 
 pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
     let mut where_clauses: Vec<String> =
         vec!["EXISTS (SELECT 1 FROM visible_messages m WHERE m.thread_id = t.id)".into()];
     let mut bind: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    // `t.id IN (…)`, not a correlated EXISTS: the folder's thread set is built
-    // once through the folder index instead of probed for every thread in the
-    // database, which made small views (the inbox) cost as much as the whole
-    // mailbox. Same rows either way.
+    // `t.id IN (…)` built folder-first (CROSS JOIN pins the join order), not a
+    // correlated EXISTS: the folder's thread set is built once through the
+    // folder index instead of probed for every thread in the database, which
+    // made small views (the inbox) cost as much as the whole mailbox. Without
+    // the pinned order SQLite may scan every message instead. Same rows.
     let role_exists = |role: &str, bind: &mut Vec<Box<dyn rusqlite::types::ToSql>>| {
         bind.push(Box::new(role.to_string()));
         format!(
-            "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+            "t.id IN (SELECT m.thread_id FROM folders f CROSS JOIN visible_messages m ON m.folder_id = f.id
                       WHERE f.role = ?{})",
             bind.len()
         )
@@ -279,8 +282,8 @@ pub fn list(conn: &Connection, args: &ListArgs) -> Result<ThreadPage> {
             where_clauses.push(c);
             where_clauses.push("s.thread_id IS NULL".into());
         }
-        View::Starred => where_clauses.push(HAS_VISIBLE_STAR.into()),
-        View::Snoozed => where_clauses.push("s.thread_id IS NOT NULL".into()),
+        View::Starred => where_clauses.push(STARRED_THREADS.into()),
+        View::Snoozed => where_clauses.push("t.id IN (SELECT thread_id FROM snoozes)".into()),
         View::Sent => {
             let c = role_exists(roles::SENT, &mut bind);
             where_clauses.push(c);
