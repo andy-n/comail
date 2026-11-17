@@ -47,9 +47,15 @@ fork_cargo_audit() {
   local -a args=()
   for id in $(fork_deny_ignores "$root"); do args+=(--ignore "$id"); done
   # Exit status is 1 whenever anything is found; the JSON is what we judge.
-  json=$(cd "$root/src-tauri" && cargo audit --json ${args[@]+"${args[@]}"} 2>/dev/null) || true
-  if ! jq -e '.vulnerabilities' >/dev/null 2>&1 <<<"$json"; then
-    warn "cargo audit produced no report (advisory-db fetch failed?)"
+  # The advisory-db fetch occasionally fails transiently, so retry once.
+  local attempt
+  for attempt in 1 2; do
+    json=$(cd "$root/src-tauri" && cargo audit --json ${args[@]+"${args[@]}"} 2>/dev/null) || true
+    jq -e '.vulnerabilities' >/dev/null 2>&1 <<<"$json" && break
+    json=
+  done
+  if [[ -z $json ]]; then
+    warn "cargo audit produced no report (advisory-db fetch failed twice)"
     return 1
   fi
   graph=$(fork_deny_graph "$root") || {
