@@ -55,7 +55,7 @@ impl Q {
     fn role_exists(&mut self, role: &str) -> String {
         self.bind.push(Box::new(role.to_string()));
         format!(
-            "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+            "t.id IN (SELECT m.thread_id FROM folders f CROSS JOIN visible_messages m ON m.folder_id = f.id
                       WHERE f.role = ?{})",
             self.bind.len()
         )
@@ -65,7 +65,7 @@ impl Q {
         let c = self.role_exists(roles::INBOX);
         self.clauses.push(c);
         if self.unread_only {
-            self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND f.role='inbox')".into());
+            self.clauses.push("t.id IN (SELECT m.thread_id FROM folders f CROSS JOIN visible_messages m ON m.folder_id=f.id WHERE m.is_read=0 AND f.role='inbox')".into());
             self.unread_only = false;
         }
         self.clauses.push("s.thread_id IS NULL".into());
@@ -118,18 +118,26 @@ impl Q {
         self
     }
 
-    fn run(mut self, conn: &Connection) -> Result<i64> {
+    fn sql(&mut self) -> String {
+        // Only the starred and snoozed badges get here, and both start from a
+        // small candidate set, so the unread test is a per-candidate probe; an
+        // IN-set here would scan every message in the mailbox.
         if self.unread_only {
-            self.clauses.push("t.id IN (SELECT m.thread_id FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
+            self.clauses.push("EXISTS (SELECT 1 FROM visible_messages m LEFT JOIN folders f ON f.id=m.folder_id WHERE m.thread_id=t.id AND m.is_read=0 AND COALESCE(f.role,'') NOT IN ('trash','spam'))".into());
+            self.unread_only = false;
         }
         let where_sql = if self.clauses.is_empty() {
             String::new()
         } else {
             format!("WHERE {}", self.clauses.join(" AND "))
         };
-        let sql = format!(
+        format!(
             "SELECT COUNT(*) FROM threads t LEFT JOIN snoozes s ON s.thread_id = t.id {where_sql}"
-        );
+        )
+    }
+
+    fn run(mut self, conn: &Connection) -> Result<i64> {
+        let sql = self.sql();
         let params: Vec<&dyn rusqlite::types::ToSql> =
             self.bind.iter().map(|b| b.as_ref()).collect();
         Ok(conn.query_row(&sql, params.as_slice(), |r| r.get(0))?)
@@ -177,27 +185,27 @@ pub fn unread_counts(
     views.insert(
         "starred".to_string(),
         Q::unread(account_id)
-            .clause(super::threads::HAS_VISIBLE_STAR)
+            .clause(super::threads::STARRED_THREADS)
             .clause(super::threads::HAS_VISIBLE_MAIL)
             .run(conn)?,
     );
     views.insert(
         "snoozed".to_string(),
         Q::unread(account_id)
-            .clause("s.thread_id IS NOT NULL")
+            .clause("t.id IN (SELECT thread_id FROM snoozes)")
             .clause(super::threads::HAS_VISIBLE_MAIL)
             .run(conn)?,
     );
     // Spam is never notified, so its badge is the only signal that mail landed there.
     views.insert("spam".to_string(), Q::any(account_id).clause(
-        "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id=m.folder_id WHERE m.is_read=0 AND f.role='spam')"
+        "t.id IN (SELECT m.thread_id FROM folders f CROSS JOIN visible_messages m ON m.folder_id=f.id WHERE m.is_read=0 AND f.role='spam')"
     ).run(conn)?);
     // Drafts badge = number of threads with a draft, unread or not.
     views.insert(
         "drafts".to_string(),
         Q::any(account_id)
             .clause(
-                "t.id IN (SELECT m.thread_id FROM visible_messages m JOIN folders f ON f.id = m.folder_id
+                "t.id IN (SELECT m.thread_id FROM folders f CROSS JOIN visible_messages m ON m.folder_id = f.id
                           WHERE m.is_draft = 1 AND f.role = 'drafts')",
             )
             .run(conn)?,
@@ -218,6 +226,45 @@ mod tests {
     use super::*;
     use crate::models::SplitRuleQuery;
     use rusqlite::params;
+
+    /// Badge counts run after every mail change, on the single reader thread,
+    /// so none may probe every thread or scan every message per count: each
+    /// must start from a folder or the snoozes table. (The starred badge builds
+    /// its set in one pass over messages; it is left out here.)
+    #[test]
+    fn badge_queries_never_scan_the_whole_mailbox() {
+        let conn = test_db();
+        let label = |q: Q| q.label(5);
+        let cases: Vec<(&str, Q)> = vec![
+            ("inbox", Q::unread(None).inbox()),
+            ("important", Q::unread(None).inbox().bucket(false)),
+            ("manual label", label(Q::unread(None).inbox())),
+            ("auto label", Q::unread(None).inbox().routed_label(3)),
+            (
+                "snoozed",
+                Q::unread(None)
+                    .clause("t.id IN (SELECT thread_id FROM snoozes)")
+                    .clause(super::super::threads::HAS_VISIBLE_MAIL),
+            ),
+        ];
+        for (name, mut q) in cases {
+            let sql = format!("EXPLAIN QUERY PLAN {}", q.sql());
+            let params: Vec<&dyn rusqlite::types::ToSql> =
+                q.bind.iter().map(|b| b.as_ref()).collect();
+            let mut stmt = conn.prepare(&sql).unwrap();
+            let plan: Vec<String> = stmt
+                .query_map(params.as_slice(), |r| r.get::<_, String>(3))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            for line in &plan {
+                let full_scan = line.starts_with("SCAN t")
+                    || line.starts_with("SCAN m")
+                    || line.starts_with("SCAN vm");
+                assert!(!full_scan, "{name}: full scan `{line}` in plan {plan:#?}");
+            }
+        }
+    }
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
