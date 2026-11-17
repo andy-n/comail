@@ -5,7 +5,6 @@ import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
 import type {
   ConditionPreview,
-  Label,
   RuleCondition,
   SplitRule,
   SplitRuleQuery,
@@ -16,9 +15,16 @@ import {
   queryToCondition,
   simplify,
 } from "../../lib/ruleCondition";
-import { mergeTabOrder, nextTabPosition } from "../../lib/splitOrder";
+import {
+  mergeTabOrder,
+  moveTab,
+  nextTabPosition,
+  orderedTabKey,
+} from "../../lib/splitOrder";
+import { useDragReorder } from "../../lib/useDragReorder";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
+import { persistTabOrder } from "../../queries/tabOrder";
 import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
 import {
@@ -185,8 +191,6 @@ export function SplitInboxSection() {
   const handleRefs = useRef(new Map<string, HTMLButtonElement>());
   const [relabeling, setRelabeling] = useState(false);
   const [restoringDefaults, setRestoringDefaults] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
 
   // Custom splits and auto-label tabs share one order (see mergeTabOrder).
   const items = mergeTabOrder(splits, labels);
@@ -248,40 +252,13 @@ export function SplitInboxSection() {
   // Move the tab at `from` so it sits at `to` (higher = earlier = wins first).
   // Custom splits and auto-label tabs share one order, so this drives both.
   const reorderTo = async (from: number, to: number) => {
-    if (from === to || to < 0 || to >= items.length) return;
-    const next = [...items];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    // optimistic: renumber both caches so every tab reorders immediately
-    const posOf = new Map(next.map((it, i) => [`${it.kind}:${it.id}`, i]));
-    queryClient.setQueryData<SplitRule[]>(["splits"], (old) =>
-      (old ?? []).map((s) => ({
-        ...s,
-        position: posOf.get(`split:${s.id}`) ?? s.position,
-      })),
-    );
-    queryClient.setQueryData<Label[]>(["labels"], (old) =>
-      (old ?? []).map((l) => ({
-        ...l,
-        position: posOf.get(`label:${l.id}`) ?? l.position,
-      })),
-    );
-    try {
-      await call("reorder_tabs", {
-        order: next.map((it) => ({ kind: it.kind, id: it.id })),
-      });
-    } catch (err) {
-      pushToast({
-        kind: "error",
-        message: t("settings:splits.reorderFailed", {
-          detail: errorMessage(err),
-        }),
-      });
-    } finally {
-      invalidateSplitViews();
-      void queryClient.invalidateQueries({ queryKey: ["labels"] });
-    }
+    const next = moveTab(items, from, to);
+    if (next) await persistTabOrder(next);
   };
+  const itemKeys = items.map(orderedTabKey);
+  const reorder = useDragReorder("settings-tabs", (fromKey, toKey) =>
+    void reorderTo(itemKeys.indexOf(fromKey), itemKeys.indexOf(toKey)),
+  );
 
   const deleteSplit = async (splitId: number) => {
     try {
@@ -404,21 +381,11 @@ export function SplitInboxSection() {
             {items.map((it, i) => (
               <div
                 key={it.kind + it.id}
-                onDragOver={(e) => {
-                  if (dragIndex === null) return;
-                  e.preventDefault();
-                  if (overIndex !== i) setOverIndex(i);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragIndex !== null) void reorderTo(dragIndex, i);
-                  setDragIndex(null);
-                  setOverIndex(null);
-                }}
+                {...reorder.target(itemKeys[i])}
                 className={`flex items-center gap-2.5 transition-colors ${
-                  dragIndex === i
+                  reorder.drag?.from === itemKeys[i]
                     ? "opacity-40"
-                    : overIndex === i && dragIndex !== null
+                    : reorder.drag?.over === itemKeys[i]
                       ? "bg-accent/10"
                       : ""
                 }`}
@@ -430,12 +397,7 @@ export function SplitInboxSection() {
                     if (el) handleRefs.current.set(key, el);
                     else handleRefs.current.delete(key);
                   }}
-                  draggable
-                  onDragStart={() => setDragIndex(i)}
-                  onDragEnd={() => {
-                    setDragIndex(null);
-                    setOverIndex(null);
-                  }}
+                  {...reorder.handle(itemKeys[i])}
                   // Keyboard reorder: Arrow Up / Down move this tab one step.
                   onKeyDown={(e) => {
                     const to =
