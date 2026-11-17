@@ -6,8 +6,10 @@ import { errorMessage } from "../../ipc/errors";
 import { queryClient } from "../../queries/client";
 import { findCachedSummary } from "../../queries/actions";
 import { useAccounts, useLabels, useSplits } from "../../queries/hooks";
+import { excludeSender, tabMatch } from "../../lib/labelTabs";
 import { domainSplitPrefill } from "../../lib/splitPrefill";
 import { nextTabPosition } from "../../lib/splitOrder";
+import type { RuleCondition, SplitRule } from "../../ipc/types";
 import { useUi } from "../../stores/ui";
 import { describeCondition } from "../settings/ConditionBuilder";
 import { Modal } from "../ui/Modal";
@@ -120,19 +122,21 @@ export function SplitPopover() {
     });
   };
 
-  // Add the needle to the matched rule's excludeSenders; the save reroutes the
-  // thread out of the rule's tab automatically.
+  // Exclude the needle from the matched rule, keeping the rest of it (typed
+  // condition, AI check, target, view/exclusive, badge); the save reroutes
+  // the thread out of the rule's tab automatically.
   const exclude = async (needle: string) => {
     if (!matchedRule) return;
-    const existing = matchedRule.query.excludeSenders ?? [];
-    if (!existing.includes(needle)) {
+    const next = withExclusion(matchedRule, needle);
+    if (next) {
       await call("save_split", {
         split: {
           id: matchedRule.id,
           name: matchedRule.name,
           position: matchedRule.position,
-          query: { ...matchedRule.query, excludeSenders: [...existing, needle] },
+          ...next,
           target: matchedRule.target ?? null,
+          ai: matchedRule.ai ?? null,
           countAll: matchedRule.countAll ?? false,
           exclusive: matchedRule.exclusive ?? true,
         },
@@ -174,7 +178,8 @@ export function SplitPopover() {
             sub: matchedRule.name,
             run: () => exclude(email),
           },
-          ...(domainPrefill
+          // A label tab learns exact senders only (see labelTabs.ts).
+          ...(domainPrefill && !tabMatch(matchedRule)
             ? [
                 {
                   key: "exclude-domain",
@@ -266,4 +271,30 @@ export function SplitPopover() {
       </div>
     </Modal>
   );
+}
+
+/**
+ * The query and condition of `rule` with `needle` (an address, or `@domain`)
+ * excluded; null when it already is. A label tab learns the sender out
+ * (`excludeSender`), any other typed condition gets `not(sender contains …)`
+ * ANDed on, and a legacy query its `excludeSenders`.
+ */
+function withExclusion(
+  rule: SplitRule,
+  needle: string,
+): Pick<SplitRule, "query" | "condition"> | null {
+  const typed = rule.condition;
+  if (!typed) {
+    const existing = rule.query.excludeSenders ?? [];
+    if (existing.includes(needle)) return null;
+    return { query: { ...rule.query, excludeSenders: [...existing, needle] }, condition: null };
+  }
+  const learned = excludeSender(typed, needle);
+  if (learned) {
+    return JSON.stringify(learned) === JSON.stringify(typed) ? null : { query: rule.query, condition: learned };
+  }
+  const not: RuleCondition = { kind: "not", cond: { kind: "sender", op: "contains", value: needle } };
+  const parts = typed.kind === "all" ? typed.of : [typed];
+  if (parts.some((c) => JSON.stringify(c) === JSON.stringify(not))) return null;
+  return { query: rule.query, condition: { kind: "all", of: [...parts, not] } };
 }
