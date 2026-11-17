@@ -22,9 +22,21 @@ Installers for every release are on the
   that don't keep or train on your mail.
 - **Quick replies can be turned off.** Opening a reply no longer has to
   send the thread to your AI provider.
+- **Label tabs.** Settings › Split inbox lists every label plus Starred with
+  "Show as tab" and "Hide from inbox" toggles. A tab that doesn't hide mail
+  is a view: its mail stays in Important and also shows in the tab. Split
+  rules can match starred mail, and threads re-sort as soon as they're
+  starred or unstarred, here or in Gmail.
+- **Drag and drop.** Drag tabs in the tab bar or sidebar to reorder them.
+  Hold a row (or Option-drag) and drop it on a bundle, tab or sidebar row
+  to move it there; dropping on Starred stars it. Comail learns the
+  sender, so their future mail follows. Z undoes a move.
+- **Hide label chips.** A layout setting hides label chips on rows, for
+  when bundles already show the label.
 
 ### Fixed
 
+- Excluding a sender from a tab keeps the tab's other conditions.
 - One message the IMAP parser can't read no longer stalls header sync for
   every folder after it; it syncs without its MIME structure or is skipped
   and retried later.
