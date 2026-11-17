@@ -6,6 +6,8 @@ import {
   mergeTabOrder,
   moveTabByKey,
 } from "../../lib/splitOrder";
+import { tabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
 import { useDragReorder, type ReorderWiring } from "../../lib/useDragReorder";
 import { useModHeld } from "../../lib/useModHeld";
 import { splitCount, useLabels, useSettings, useSplits, useUnreadCounts } from "../../queries/hooks";
@@ -138,6 +140,7 @@ export function SplitTabs() {
               focusable={focusKey === tab.key}
               onClick={() => selectInboxTab(tab)}
               reorder={rk == null ? undefined : reorder.wire(rk, reorderKeys)}
+              tab={tab}
             />
           );
         })}
@@ -161,6 +164,7 @@ function SplitTab({
   focusable,
   onClick,
   reorder,
+  tab,
 }: {
   ref: (el: HTMLButtonElement | null) => void;
   name: string;
@@ -177,10 +181,14 @@ function SplitTab({
   onClick: () => void;
   /** Drag-to-reorder wiring; absent on the pinned Important / Other tabs. */
   reorder?: ReorderWiring;
+  /** The tab's split / auto-label id: dragged mail can be dropped on it. */
+  tab: { splitId?: number; labelId?: number };
 }) {
   const { t } = useTranslation();
   const count = unread ?? 0;
   const hint = showKeyHint && keyHint;
+  const route = tabRoute(tab);
+  const dropHere = useDropHighlight(route);
   return (
     <button
       ref={ref}
@@ -189,6 +197,7 @@ function SplitTab({
       tabIndex={focusable ? 0 : -1}
       title={name}
       {...reorder?.attrs}
+      {...(route ? dropTargetProps(route, name) : undefined)}
       // A click selects without moving focus, so Tab keeps cycling splits.
       onMouseDown={(e) => {
         e.preventDefault();
@@ -201,7 +210,7 @@ function SplitTab({
           : hasNew
             ? "text-ink-muted"
             : "text-ink-faint hover:text-ink-muted"
-      }${reorder?.dragging ? " opacity-40" : ""}`}
+      }${reorder?.dragging ? " opacity-40" : ""}${dropHere ? " co-drop-target rounded-control" : ""}`}
     >
       {reorder?.dropSide && (
         <span

@@ -188,6 +188,26 @@ export interface ActionResult {
   actionIds: number[];
 }
 
+/** What a drag-and-drop move into a tab did, and how to revert it. */
+export interface MoveOutcome {
+  /** Threads that changed tab. */
+  moved: number[];
+  /** Threads a rule the drop can't undo keeps in place (e.g. a sender rule). */
+  held: { threadId: number; splitId: number }[];
+  undo: MoveUndo;
+}
+
+/** Opaque inverse of a move; hand it back to `undo_move_threads`. */
+export interface MoveUndo {
+  threads: {
+    threadId: number;
+    routedTab: string | null;
+    addedLabels: number[];
+    removedLabels: number[];
+  }[];
+  senders: { key: string; keyword: string | null }[];
+}
+
 export interface AddPasswordAccountArgs {
   email: string;
   displayName: string | null;
@@ -1180,6 +1200,12 @@ export interface Commands {
   reorder_tabs(args: {
     order: { kind: "split" | "label"; id: number }[];
   }): Promise<void>;
+  /** Drag-and-drop: move threads into an inbox tab, given as a route key
+   *  (`important`, `other`, `split:<id>` of a label tab, `label:<id>` of an
+   *  AI category). Label tabs get their label (synced as an IMAP keyword). */
+  move_threads_to_tab(args: { threadIds: number[]; to: string }): Promise<MoveOutcome>;
+  /** Revert a move with the `undo` it returned. */
+  undo_move_threads(args: { undo: MoveUndo }): Promise<void>;
 
   list_labels(args: Record<string, never>): Promise<Label[]>;
   save_label(args: {

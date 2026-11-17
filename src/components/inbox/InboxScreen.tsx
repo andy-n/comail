@@ -14,6 +14,7 @@ import { accountColor, accountShortName } from "../../lib/format";
 import { folderLeafName } from "../../lib/folders";
 import { inlineThreadOrder, type Bundle } from "../../lib/listItems";
 import { useBundles } from "../../lib/useBundles";
+import { tabRoute } from "../../lib/tabDrop";
 import { ReauthBanner } from "../common/ReauthBanner";
 import { InboxZero } from "./InboxZero";
 import { SplitTabs } from "./SplitTabs";
@@ -103,6 +104,15 @@ export function InboxScreen() {
     [inline, toggleBundle, selectInboxTab],
   );
 
+  // Inbox rows can be dragged onto other tabs; this is the tab they come
+  // from (null for a folder or user-label filter, which isn't one tab).
+  const dragSource = useMemo(() => {
+    if (view !== "inbox") return undefined;
+    if (folderFilter != null) return null;
+    if (labelFilter != null && !labels?.some((l) => l.id === labelFilter && l.isAuto)) return null;
+    return tabRoute({ splitId, labelId: labelFilter });
+  }, [view, folderFilter, labelFilter, labels, splitId]);
+
   const empty = !query.isLoading && threads.length === 0 && bundles.length === 0;
 
   return (
@@ -127,6 +137,7 @@ export function InboxScreen() {
           inlineBundles={inline ? expandedBundles : undefined}
           onOpenBundle={openBundle}
           onShowAllBundle={selectInboxTab}
+          dragSource={dragSource}
         />
       )}
       {view === "inbox" && <TipsBar />}

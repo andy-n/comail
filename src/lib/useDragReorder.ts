@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { pastThreshold, setDragCursor, swallowNextClick } from "./pointerDrag";
+import {
+  pastThreshold,
+  setDragCursor,
+  swallowClickAfterRelease,
+  swallowNextClick,
+} from "./pointerDrag";
 
 export type ReorderDrag = { from: string; over: string | null };
 
@@ -75,12 +80,7 @@ export function useDragReorder(group: string, onDrop: (fromKey: string, toKey: s
         ev.preventDefault();
         ev.stopPropagation();
         stop();
-        // The release still fires a click on the pressed element; eat it.
-        const eat = () => {
-          swallowNextClick();
-          window.removeEventListener("mouseup", eat, true);
-        };
-        window.addEventListener("mouseup", eat, true);
+        swallowClickAfterRelease();
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);

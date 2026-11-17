@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { View } from "../../ipc/types";
 import { buildFolderTree, type FolderNode } from "../../lib/folders";
 import { inboxTabOrder, mergeTabOrder, moveTabByKey, orderedTabKey } from "../../lib/splitOrder";
+import type { TabRoute } from "../../lib/tabDrop";
+import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
 import { useDragReorder, type ReorderWiring } from "../../lib/useDragReorder";
 import {
   splitCount,
@@ -214,6 +216,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                   active={inboxActive && labelFilter == null && splitId === sid}
                   badge={counts?.[item.kind] || undefined}
                   indent
+                  dropRoute={item.kind}
                   onClick={() => go("inbox", sid)}
                 />
               );
@@ -226,6 +229,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                   active={inboxActive && labelFilter == null && splitId === item.id}
                   badge={splitCount(counts, item.id) || undefined}
                   indent
+                  dropRoute={`split:${item.id}`}
                   reorder={reorder.wire(orderedTabKey(item), reorderKeys)}
                   onClick={() => go("inbox", item.id)}
                 />
@@ -239,6 +243,7 @@ export function Sidebar({ docked = false }: { docked?: boolean }) {
                 dotColor={item.label.color}
                 badge={counts?.labels[String(item.id)] || undefined}
                 indent
+                dropRoute={`label:${item.id}`}
                 reorder={reorder.wire(orderedTabKey(item), reorderKeys)}
                 onClick={() => {
                   openThread(null);
@@ -382,6 +387,7 @@ function SideRow({
   dotColor,
   kbd,
   reorder,
+  dropRoute,
   onClick,
 }: {
   label: string;
@@ -393,13 +399,17 @@ function SideRow({
   kbd?: string;
   /** Drag-to-reorder wiring (custom inbox tab rows only). */
   reorder?: ReorderWiring;
+  /** Inbox tab rows: dragged mail dropped here moves into this tab. */
+  dropRoute?: TabRoute;
   onClick: () => void;
 }) {
+  const dropHere = useDropHighlight(dropRoute ?? null);
   return (
     <button
       data-nav
       data-active={active ? "true" : undefined}
       {...reorder?.attrs}
+      {...(dropRoute ? dropTargetProps(dropRoute, label) : undefined)}
       onMouseDown={reorder?.onMouseDown}
       className={`relative mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-control py-1.5 pe-3 text-start text-base ${NAV_FOCUS} ${
         indent ? "ps-7" : "ps-3"
@@ -407,7 +417,7 @@ function SideRow({
         active
           ? "bg-[var(--selected-bg)] font-medium text-ink"
           : "text-ink-muted hover:bg-bg2 hover:text-ink"
-      }${reorder?.dragging ? " opacity-40" : ""}`}
+      }${reorder?.dragging ? " opacity-40" : ""}${dropHere ? " co-drop-target" : ""}`}
       onClick={onClick}
     >
       {reorder?.dropSide && (

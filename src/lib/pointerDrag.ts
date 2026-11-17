@@ -23,6 +23,16 @@ export function swallowNextClick() {
   setTimeout(() => window.removeEventListener("click", swallow, true), 0);
 }
 
+/** Escape ended a drag while the button is still down: eat the click its
+ *  eventual release fires on the pressed element. */
+export function swallowClickAfterRelease() {
+  const eat = () => {
+    swallowNextClick();
+    window.removeEventListener("mouseup", eat, true);
+  };
+  window.addEventListener("mouseup", eat, true);
+}
+
 /** Window-wide drag cursor (grabbing, or no-drop over a target that refuses
  *  the drop) and no text selection; `null` ends the drag. */
 export function setDragCursor(mode: "grab" | "noDrop" | null) {

@@ -972,6 +972,30 @@ pub async fn reorder_tabs(
         .map_err(err)
 }
 
+/// Drag-and-drop: move threads into an inbox tab (`important`, `other`,
+/// `split:<id>` or `label:<id>`).
+#[tauri::command]
+pub async fn move_threads_to_tab(
+    state: State<'_, AppState>,
+    thread_ids: Vec<i64>,
+    to: RouteKey,
+) -> CmdResult<comail_core::route::manual::MoveOutcome> {
+    state
+        .core
+        .move_threads_to_tab(thread_ids, to)
+        .await
+        .map_err(err)
+}
+
+/// Revert a `move_threads_to_tab` with the `undo` it returned.
+#[tauri::command]
+pub async fn undo_move_threads(
+    state: State<'_, AppState>,
+    undo: comail_core::route::manual::MoveUndo,
+) -> CmdResult<()> {
+    state.core.undo_move_threads(undo).await.map_err(err)
+}
+
 // ---------- labels ----------
 
 #[derive(serde::Deserialize)]
