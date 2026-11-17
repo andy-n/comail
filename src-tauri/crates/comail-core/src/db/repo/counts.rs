@@ -91,11 +91,17 @@ impl Q {
         self
     }
 
-    /// A custom split tab: threads routed to `split:<id>`.
-    fn routed_split(mut self, id: i64) -> Self {
-        self.bind.push(Box::new(format!("split:{id}")));
-        self.clauses
-            .push(format!("t.routed_tab = ?{}", self.bind.len()));
+    /// A custom split tab: threads routed to `split:<id>`, or for a view tab
+    /// (non-exclusive split) inbox threads matching its condition.
+    fn split(mut self, sp: &SplitRule) -> Self {
+        if sp.exclusive {
+            self.bind.push(Box::new(format!("split:{}", sp.id)));
+            self.clauses
+                .push(format!("t.routed_tab = ?{}", self.bind.len()));
+        } else {
+            let c = crate::route::sql::view_tab_clause(&sp.effective_condition(), &mut self.bind);
+            self.clauses.push(c);
+        }
         self
     }
 
@@ -156,7 +162,7 @@ pub fn unread_counts(
         } else {
             Q::unread(account_id)
         };
-        let n = base.inbox().routed_split(sp.id).run(conn)?;
+        let n = base.inbox().split(sp).run(conn)?;
         splits_map.insert(sp.id.to_string(), n);
     }
 
@@ -221,6 +227,7 @@ mod tests {
 
     fn test_db() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::register_functions(&conn).unwrap();
         crate::db::migrations::run(&mut conn).unwrap();
         conn.execute(
             "INSERT INTO accounts (id, email, provider, auth_kind, username,
@@ -386,6 +393,7 @@ mod tests {
             target: None,
             ai: None,
             count_all: false,
+            exclusive: true,
         };
         let label = Label {
             id: 5,
@@ -421,6 +429,7 @@ mod tests {
             target: None,
             ai: None,
             count_all: false,
+            exclusive: true,
         };
 
         let unread_only = unread_counts(&conn, None, std::slice::from_ref(&split), &[]).unwrap();
@@ -434,5 +443,46 @@ mod tests {
         // untouched by it.
         assert_eq!(all.inbox, unread_only.inbox);
         assert_eq!(all.important, unread_only.important);
+    }
+
+    #[test]
+    fn view_tab_counts_matching_inbox_threads_without_taking_them() {
+        let conn = test_db();
+        seed_thread(&conn, 1, 1, false); // unread, starred
+        seed_thread(&conn, 2, 0, false); // read, starred
+        seed_thread(&conn, 3, 1, false); // unread, not starred
+        seed_thread(&conn, 4, 1, false); // unread, starred, but archived
+        conn.execute_batch(
+            "INSERT INTO folders (id, account_id, imap_name, role) VALUES (2,1,'Archive','archive');
+             UPDATE messages SET is_starred = 1 WHERE thread_id IN (1, 2, 4);
+             UPDATE messages SET folder_id = 2 WHERE thread_id = 4;",
+        )
+        .unwrap();
+        let mut view = SplitRule {
+            id: 9,
+            name: "Starred".into(),
+            position: 0,
+            query: SplitRuleQuery::default(),
+            condition: Some(crate::models::RuleCondition::Any {
+                of: vec![crate::models::RuleCondition::IsStarred { value: true }],
+            }),
+            target: None,
+            ai: None,
+            count_all: false,
+            exclusive: false,
+        };
+        let c = unread_counts(&conn, None, std::slice::from_ref(&view), &[]).unwrap();
+        assert_eq!(c.splits["9"], 1, "unread starred inbox threads");
+        assert_eq!(c.important, 2, "the starred thread stays in Important too");
+        view.count_all = true;
+        let c = unread_counts(&conn, None, std::slice::from_ref(&view), &[]).unwrap();
+        assert_eq!(c.splits["9"], 2, "read ones too, archived never");
+
+        // A matching thread another split routed away still shows in the view.
+        conn.execute("UPDATE threads SET routed_tab = 'split:7' WHERE id = 1", [])
+            .unwrap();
+        let c = unread_counts(&conn, None, std::slice::from_ref(&view), &[]).unwrap();
+        assert_eq!(c.splits["9"], 2);
+        assert_eq!(c.important, 1);
     }
 }

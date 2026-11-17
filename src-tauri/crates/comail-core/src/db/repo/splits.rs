@@ -45,6 +45,7 @@ fn from_row(row: &Row) -> rusqlite::Result<SplitRule> {
         target,
         ai,
         count_all: row.get::<_, i64>("count_all").unwrap_or(0) != 0,
+        exclusive: row.get::<_, i64>("exclusive").unwrap_or(1) != 0,
     })
 }
 
@@ -71,6 +72,7 @@ pub fn save(
     target: Option<RouteKey>,
     ai: Option<&AiCheck>,
     count_all: bool,
+    exclusive: bool,
 ) -> Result<SplitRule> {
     let qjson = serde_json::to_string(query)?;
     let cjson = condition.map(serde_json::to_string).transpose()?;
@@ -83,16 +85,18 @@ pub fn save(
         Some(id) => {
             conn.execute(
                 "UPDATE split_rules SET name=?2, position=?3, query_json=?4, target=?5,
-                 condition_json=?6, ai_json=?7, count_all=?8 WHERE id=?1",
-                params![id, name, position, qjson, target, cjson, ajson, count_all],
+                 condition_json=?6, ai_json=?7, count_all=?8, exclusive=?9 WHERE id=?1",
+                params![
+                    id, name, position, qjson, target, cjson, ajson, count_all, exclusive
+                ],
             )?;
             id
         }
         None => {
             conn.execute(
                 "INSERT INTO split_rules (name, position, query_json, target, condition_json, ai_json,
-                 count_all) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![name, position, qjson, target, cjson, ajson, count_all],
+                 count_all, exclusive) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![name, position, qjson, target, cjson, ajson, count_all, exclusive],
             )?;
             conn.last_insert_rowid()
         }
@@ -131,6 +135,7 @@ mod tests {
             Some(RouteKey::Label(3)),
             None,
             true,
+            true,
         )
         .unwrap();
         let b = save(
@@ -143,6 +148,7 @@ mod tests {
             None,
             None,
             false,
+            true,
         )
         .unwrap();
 
@@ -163,6 +169,7 @@ mod tests {
         assert_eq!(got.target, Some(RouteKey::Label(3)));
         assert!(got.condition.is_none());
         assert!(got.count_all);
+        assert!(got.exclusive);
 
         let updated = save(
             &c,
@@ -174,12 +181,14 @@ mod tests {
             None,
             None,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(updated.name, "GH");
         assert!(updated.query.senders.is_none());
         assert_eq!(updated.target, None);
         assert!(!updated.count_all);
+        assert!(!updated.exclusive, "a view tab round-trips");
 
         delete(&c, a.id).unwrap();
         assert!(get(&c, a.id).unwrap().is_none());
@@ -203,7 +212,19 @@ mod tests {
             senders: Some(vec!["legacy".into()]),
             ..Default::default()
         };
-        let a = save(&c, None, "Typed", 0, &q, Some(&cond), None, None, false).unwrap();
+        let a = save(
+            &c,
+            None,
+            "Typed",
+            0,
+            &q,
+            Some(&cond),
+            None,
+            None,
+            false,
+            true,
+        )
+        .unwrap();
         assert_eq!(a.condition.as_ref(), Some(&cond));
         assert_eq!(a.effective_condition(), cond);
 

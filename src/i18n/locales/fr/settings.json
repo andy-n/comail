@@ -406,6 +406,9 @@
     },
     "automatedHint": "Automatisé désigne le courrier de masse : newsletters, notifications, expéditeurs no-reply (détecté via List-Unsubscribe / en-têtes de masse). « D'une personne » est écrit par un humain. « Tous » ignore ce critère.",
     "hasAttachmentLabel": "Uniquement les e-mails avec pièce jointe",
+    "exclusiveLabel": "Masquer de la boîte de réception le courrier correspondant",
+    "exclusiveHint": "Activé, le courrier correspondant passe dans cet onglet et quitte Important ; le premier onglet correspondant l’emporte. Désactivé, l’onglet affiche toutes les conversations correspondantes de la boîte de réception et le courrier reste où il est.",
+    "viewBadge": "Aussi dans la boîte",
     "targetLabel": "Envoyer les correspondances vers",
     "targetHint": "Son propre onglet crée un nouvel onglet pour cette règle. Choisissez Important, Autres ou une catégorie pour envoyer les e-mails dans un onglet existant.",
     "target": {

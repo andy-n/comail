@@ -741,6 +741,13 @@ pub struct SplitRule {
     /// ones, so a split that is fully read still shows its size.
     #[serde(default)]
     pub count_all: bool,
+    /// Hide matching mail from the inbox (the default, and how splits always
+    /// worked): routing files matches here, out of Important, first match
+    /// wins. When false the split is a view tab: routing skips it, and its tab
+    /// lists inbox threads matching the condition wherever they are routed,
+    /// so a thread can show in Important and here at once.
+    #[serde(default = "default_true")]
+    pub exclusive: bool,
 }
 
 /// A yes/no question answered by the decision model (or chat fallback).
@@ -1332,7 +1339,7 @@ fn text_to_html(text: &str) -> String {
         .replace('\n', "<br>")
 }
 
-fn default_true() -> bool {
+pub(crate) fn default_true() -> bool {
     true
 }
 

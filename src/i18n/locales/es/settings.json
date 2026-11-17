@@ -406,6 +406,9 @@
     },
     "automatedHint": "Automatizado es correo masivo: boletines, notificaciones, remitentes no-reply (detectado por List-Unsubscribe / cabeceras masivas). \"De una persona\" lo escribe un humano. \"Cualquiera\" lo ignora.",
     "hasAttachmentLabel": "Solo correo con adjunto",
+    "exclusiveLabel": "Ocultar de la bandeja el correo que coincida",
+    "exclusiveHint": "Activado, el correo que coincide pasa a esta pestaña y sale de Importante; gana la primera pestaña que coincida. Desactivado, la pestaña muestra todas las conversaciones de la bandeja que coinciden y el correo se queda donde está.",
+    "viewBadge": "También en la bandeja",
     "targetLabel": "Enviar coincidencias a",
     "targetHint": "Su propia pestaña crea una nueva pestaña para esta regla. Elige Importante, Otros o una categoría para enviar el correo a una pestaña existente.",
     "target": {

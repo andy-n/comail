@@ -100,6 +100,7 @@ export function LabelsSection({
             condition: { kind: "label", id: label.id },
             target: null,
             countAll: false,
+            exclusive: true,
           },
         });
       } else if (!on && existing) {

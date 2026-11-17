@@ -98,7 +98,7 @@ impl RuleSubject {
 }
 
 /// How a subject needle is compared.
-enum SubjectNeedle {
+pub(crate) enum SubjectNeedle {
     /// Accent- and case-insensitive (`hoá đơn` finds `HÓA ĐƠN`).
     Folded(String),
     /// Case-insensitive only.
@@ -110,7 +110,7 @@ enum SubjectNeedle {
 /// written: folding transliterates it to ASCII, and short transliterations
 /// collide - `安` folds to "an", which then also matches `电` ("dian") or
 /// any English "an".
-fn fold_subject_needle(value: &str) -> SubjectNeedle {
+pub(crate) fn fold_subject_needle(value: &str) -> SubjectNeedle {
     let value = value.trim();
     let latin = |c: char| {
         !c.is_alphabetic()
@@ -254,10 +254,16 @@ pub fn gate(sp: &SplitRule, s: &RuleSubject) -> bool {
     }
 }
 
+/// The splits routing considers: view tabs (`exclusive == false`) never claim
+/// a thread, they only list what matches them.
+fn routing(splits: &[SplitRule]) -> impl Iterator<Item = &SplitRule> {
+    splits.iter().filter(|sp| sp.exclusive)
+}
+
 /// First matching rule (in the given order) decides the route. A split with an
 /// AI check that passes its condition first yields `needs_ai` instead.
 pub fn decide(s: &RuleSubject, splits: &[SplitRule]) -> Decision {
-    for sp in splits {
+    for sp in routing(splits) {
         if !gate(sp, s) {
             continue;
         }
@@ -280,7 +286,7 @@ pub fn decide(s: &RuleSubject, splits: &[SplitRule]) -> Decision {
 /// plain rule that matches (nothing after it can win).
 pub fn ai_candidates<'a>(s: &RuleSubject, splits: &'a [SplitRule]) -> Vec<&'a SplitRule> {
     let mut out = Vec::new();
-    for sp in splits {
+    for sp in routing(splits) {
         if !gate(sp, s) {
             continue;
         }
@@ -299,8 +305,7 @@ pub fn decide_with_answers(
     splits: &[SplitRule],
     ai_yes: &HashSet<i64>,
 ) -> Decision {
-    splits
-        .iter()
+    routing(splits)
         .find(|sp| gate(sp, s) && (sp.ai.is_none() || ai_yes.contains(&sp.id)))
         .map(|sp| Decision {
             route: Some(sp.route_key()),
@@ -313,7 +318,7 @@ pub fn decide_with_answers(
 /// Like [`decide`], but records a trace of every rule tried.
 pub fn explain(s: &RuleSubject, splits: &[SplitRule]) -> Decision {
     let mut out = Decision::default();
-    for sp in splits {
+    for sp in routing(splits) {
         let cond = sp.effective_condition();
         let mut leaves = Vec::new();
         let matchable = cond.is_matchable();
@@ -444,6 +449,7 @@ mod tests {
             target,
             ai: None,
             count_all: false,
+            exclusive: true,
         }
     }
 
@@ -743,12 +749,50 @@ mod tests {
         let s = RuleSubject::load(&c, t).unwrap();
         assert!(!matches(&starred, &s));
         assert!(matches(&unstarred, &s));
-        c.execute("UPDATE messages SET is_starred = 1 WHERE id = ?1", params![msg])
-            .unwrap();
+        c.execute(
+            "UPDATE messages SET is_starred = 1 WHERE id = ?1",
+            params![msg],
+        )
+        .unwrap();
         assert!(matches(&starred, &RuleSubject::load(&c, t).unwrap()));
         // A star on a message sitting in Trash doesn't star the conversation.
-        c.execute("UPDATE messages SET folder_id = 2 WHERE id = ?1", params![msg])
-            .unwrap();
+        c.execute(
+            "UPDATE messages SET folder_id = 2 WHERE id = ?1",
+            params![msg],
+        )
+        .unwrap();
         assert!(!matches(&starred, &RuleSubject::load(&c, t).unwrap()));
+    }
+
+    #[test]
+    fn routing_skips_view_tabs() {
+        let s = subject();
+        let mut view = rule(1, RuleCondition::Label { id: 3 }, None);
+        view.exclusive = false;
+        let mut ai_view = rule(2, sender(TextOp::Contains, "github"), None);
+        ai_view.exclusive = false;
+        ai_view.ai = Some(crate::models::AiCheck {
+            instruction: "x".into(),
+            min_confidence: None,
+        });
+        let real = rule(3, sender(TextOp::Contains, "github"), None);
+        let splits = vec![view.clone(), ai_view, real];
+
+        let d = decide(&s, &splits);
+        assert_eq!(
+            d.matched_split,
+            Some(3),
+            "first match wins among exclusive splits"
+        );
+        assert!(!d.needs_ai);
+        assert!(ai_candidates(&s, &splits).is_empty());
+        assert_eq!(
+            decide_with_answers(&s, &splits, &[2].into()).matched_split,
+            Some(3)
+        );
+        let e = explain(&s, &splits);
+        assert_eq!(e.matched_split, Some(3));
+        assert!(e.rules.iter().all(|r| r.split_id == 3));
+        assert_eq!(decide(&s, &[view]), Decision::default());
     }
 }

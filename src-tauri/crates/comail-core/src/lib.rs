@@ -4141,6 +4141,7 @@ impl Core {
         target: Option<RouteKey>,
         ai: Option<AiCheck>,
         count_all: bool,
+        exclusive: bool,
         apply_existing: bool,
     ) -> Result<SplitRule> {
         let saved = self
@@ -4161,7 +4162,15 @@ impl Core {
                         )));
                     }
                 }
-                route::reroute::validate_target(conn, id, target)?;
+                route::reroute::validate_target(conn, id, target, exclusive)?;
+                // A view tab is listed in SQL; an asynchronous AI verdict
+                // can't take part in that.
+                let has_ai = ai.as_ref().is_some_and(|a| !a.instruction.trim().is_empty());
+                if !exclusive && has_ai {
+                    return Err(CoreError::Other(
+                        "a tab that keeps mail in the inbox can't use an AI check".into(),
+                    ));
+                }
                 let before = repo::splits::list(conn)?;
                 let saved = repo::splits::save(
                     conn,
@@ -4173,6 +4182,7 @@ impl Core {
                     target,
                     ai.as_ref(),
                     count_all,
+                    exclusive,
                 )?;
                 Ok((saved, before))
             })

@@ -48,8 +48,43 @@ fn run_job(conn: &mut Connection, job: Job) {
     }
 }
 
+/// Application SQL functions that expose the Rust-side text normalization, so
+/// SQL filters agree exactly with in-memory rule evaluation
+/// ([`crate::route::sql`]): `comail_addr` ([`crate::addr::normalize`]),
+/// `comail_addrs` (a To/Cc JSON list, normalized, one address per line),
+/// `comail_fold` ([`crate::search::fold`]) and `comail_lower` (Unicode
+/// lowercase, unlike SQLite's ASCII-only `lower()`). NULL in, NULL out.
+pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
+    use rusqlite::functions::{Context, FunctionFlags};
+    let flags = FunctionFlags::SQLITE_UTF8
+        | FunctionFlags::SQLITE_DETERMINISTIC
+        | FunctionFlags::SQLITE_INNOCUOUS;
+    fn text(
+        conn: &Connection,
+        name: &str,
+        flags: FunctionFlags,
+        f: fn(&str) -> String,
+    ) -> rusqlite::Result<()> {
+        conn.create_scalar_function(name, 1, flags, move |ctx: &Context| {
+            Ok(ctx.get::<Option<String>>(0)?.map(|s| f(&s)))
+        })
+    }
+    text(conn, "comail_addr", flags, crate::addr::normalize)?;
+    text(conn, "comail_addrs", flags, |json| {
+        repo::parse_addrs(json)
+            .iter()
+            .map(|a| crate::addr::normalize(&a.email))
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
+    text(conn, "comail_fold", flags, crate::search::fold)?;
+    text(conn, "comail_lower", flags, str::to_lowercase)?;
+    Ok(())
+}
+
 fn open_connection(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
+    register_functions(&conn)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -163,9 +198,10 @@ mod tests {
 pub(crate) mod testutil {
     use rusqlite::{Connection, params};
 
-    /// In-memory DB with all migrations applied.
+    /// In-memory DB with all migrations applied and the app SQL functions.
     pub fn conn() -> Connection {
         let mut c = Connection::open_in_memory().unwrap();
+        super::register_functions(&c).unwrap();
         super::migrations::run(&mut c).unwrap();
         c
     }

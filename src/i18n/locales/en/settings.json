@@ -408,6 +408,9 @@
     "hasAttachmentLabel": "Only mail with an attachment",
     "countAllLabel": "Count every conversation, not just unread",
     "countAllHint": "The tab badge normally shows unread conversations only, so a tab you have read shows no number. Turn this on to badge everything this split holds.",
+    "exclusiveLabel": "Hide matching mail from the inbox",
+    "exclusiveHint": "On, matching mail moves into this tab and out of Important; the first matching tab wins. Off, the tab shows every inbox conversation that matches and the mail stays where it is.",
+    "viewBadge": "Also in inbox",
     "targetLabel": "Route matches to",
     "targetHint": "Its own tab gives this rule a new inbox tab. Pick Important, Other, or a category to drop matching mail into an existing tab instead.",
     "target": {

@@ -305,6 +305,11 @@ export interface SplitRule {
   /** Badge every conversation in the tab instead of only the unread ones, so a
    *  split that has been fully read still shows its size. Defaults to false. */
   countAll?: boolean;
+  /** Hide matching mail from the inbox (default true): routing files matches
+   *  here, out of Important, first match wins. false = a view tab: routing
+   *  skips it and the tab lists inbox threads matching the condition, which
+   *  stay in Important too. A view tab has no target and no AI check. */
+  exclusive?: boolean;
 }
 
 /** A yes/no question answered by the decision model (or chat fallback). */
@@ -1159,11 +1164,12 @@ export interface Commands {
 
   list_splits(args: Record<string, never>): Promise<SplitRule[]>;
   save_split(args: {
-    // `countAll` is required, not optional as on SplitRule: a save rewrites the
-    // whole row, so a caller that omits it silently turns the flag back off.
-    split: Omit<SplitRule, "id" | "countAll"> & {
+    // `countAll` / `exclusive` are required, not optional as on SplitRule: a
+    // save rewrites the whole row, so a caller that omits one silently resets it.
+    split: Omit<SplitRule, "id" | "countAll" | "exclusive"> & {
       id: number | null;
       countAll: boolean;
+      exclusive: boolean;
     };
   }): Promise<SplitRule>;
   delete_split(args: { splitId: number }): Promise<void>;

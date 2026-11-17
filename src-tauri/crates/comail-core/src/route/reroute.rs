@@ -72,6 +72,8 @@ pub enum RuleChange {
         target: Option<RouteKey>,
         #[serde(default)]
         ai: Option<crate::models::AiCheck>,
+        #[serde(default = "crate::models::default_true")]
+        exclusive: bool,
     },
     Delete {
         id: i64,
@@ -95,6 +97,7 @@ impl RuleChange {
                 condition,
                 target,
                 ai,
+                exclusive,
             } => {
                 // A new rule has no id yet; any id unused by real rows works.
                 let id = id.unwrap_or(i64::MAX);
@@ -108,6 +111,7 @@ impl RuleChange {
                     target: *target,
                     ai: ai.clone(),
                     count_all: false,
+                    exclusive: *exclusive,
                 });
             }
             RuleChange::Delete { id } => {
@@ -200,14 +204,15 @@ pub fn apply_diff(
 }
 
 /// Threads parked in a tab that no longer exists: a deleted split, a split
-/// that now routes into another tab (so has none of its own), or a deleted
-/// label. Such threads would otherwise vanish from every tab.
+/// that now routes into another tab (so has none of its own), a split that
+/// became a view tab (it lists by condition, never holds routed mail), or a
+/// deleted label. Such threads would otherwise vanish from every tab.
 pub fn orphaned_thread_ids(conn: &Connection) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(
         "SELECT id FROM threads
          WHERE (routed_tab LIKE 'split:%'
                 AND routed_tab NOT IN (SELECT 'split:' || id FROM split_rules
-                                       WHERE target IS NULL OR target = ''))
+                                       WHERE (target IS NULL OR target = '') AND exclusive = 1))
             OR (routed_tab LIKE 'label:%'
                 AND routed_tab NOT IN (SELECT 'label:' || id FROM labels))",
     )?;
@@ -218,15 +223,21 @@ pub fn orphaned_thread_ids(conn: &Connection) -> Result<Vec<i64>> {
 }
 
 /// Check a rule's destination against the current rows. A target must be a
-/// tab that is actually shown: Important, Other, an existing label, or another
-/// split that has its own tab. `self_id` is the rule being saved (`None` for a
-/// new rule).
+/// tab that is actually shown and holds routed mail: Important, Other, an
+/// existing label, or another exclusive split that has its own tab. A view tab
+/// (`exclusive == false`) routes nothing, so it takes no target and nothing
+/// may route into it. `self_id` is the rule being saved (`None` for a new
+/// rule).
 pub fn validate_target(
     conn: &Connection,
     self_id: Option<i64>,
     target: Option<RouteKey>,
+    exclusive: bool,
 ) -> Result<()> {
     let bad = |msg: String| Err(CoreError::Other(format!("invalid split target: {msg}")));
+    if !exclusive && target.is_some() {
+        return bad("a tab that keeps mail in the inbox can't route it elsewhere".into());
+    }
     match target {
         None | Some(RouteKey::Important | RouteKey::Other) => {}
         Some(RouteKey::Pending) => return bad("'pending' is not a tab".into()),
@@ -234,17 +245,20 @@ pub fn validate_target(
             if Some(id) == self_id {
                 return bad("a split can't route into itself".into());
             }
-            let other: Option<Option<String>> = conn
+            let other: Option<(Option<String>, bool)> = conn
                 .query_row(
-                    "SELECT target FROM split_rules WHERE id = ?1",
+                    "SELECT target, exclusive FROM split_rules WHERE id = ?1",
                     params![id],
-                    |r| r.get(0),
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()?;
             match other {
                 None => return bad(format!("split {id} doesn't exist")),
-                Some(Some(t)) if !t.is_empty() => {
+                Some((Some(t), _)) if !t.is_empty() => {
                     return bad(format!("split {id} has no tab of its own"));
+                }
+                Some((_, false)) => {
+                    return bad(format!("split {id} keeps its mail in the inbox"));
                 }
                 Some(_) => {}
             }
@@ -260,9 +274,10 @@ pub fn validate_target(
             }
         }
     }
-    // Giving a rule a target removes its own tab; other rules routing into
-    // that tab would then point at nothing.
-    if let (Some(id), Some(_)) = (self_id, target) {
+    // Giving a rule a target removes its own tab, and a view tab holds no
+    // routed mail; other rules routing into that tab would then point at
+    // nothing.
+    if let Some(id) = self_id.filter(|_| target.is_some() || !exclusive) {
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM split_rules WHERE target = ?1 AND id <> ?2",
             params![format!("split:{id}"), id],
@@ -302,6 +317,7 @@ mod tests {
             target,
             ai: None,
             count_all: false,
+            exclusive: true,
         }
     }
 
@@ -500,6 +516,7 @@ mod tests {
             None,
             None,
             false,
+            true,
         )
         .unwrap();
         let key = Some(format!("split:{}", sp.id));
@@ -513,13 +530,18 @@ mod tests {
         // Undoing the star moves the thread back out too.
         let star = crate::apply_thread_action(&mut c, t, ActionKind::Star, None).unwrap();
         assert_eq!(routed(&c, t), key);
-        let undo = crate::db::repo::actions::get(&c, star[0].0).unwrap().unwrap();
+        let undo = crate::db::repo::actions::get(&c, star[0].0)
+            .unwrap()
+            .unwrap();
         crate::revert_action(&mut c, &undo).unwrap();
         assert_eq!(routed(&c, t), None);
 
         // A star pulled from the server (sync's flag reconcile) re-routes too.
-        c.execute("UPDATE messages SET is_starred = 1 WHERE thread_id = ?1", params![t])
-            .unwrap();
+        c.execute(
+            "UPDATE messages SET is_starred = 1 WHERE thread_id = ?1",
+            params![t],
+        )
+        .unwrap();
         super::super::reroute_threads_after_change(&c, &[t]).unwrap();
         assert_eq!(routed(&c, t), key);
     }
@@ -531,7 +553,7 @@ mod tests {
         insert_rule(&c, 1, None);
         insert_rule(&c, 2, Some("other"));
         insert_rule(&c, 3, Some("split:1"));
-        let ok = |id, t| validate_target(&c, id, t).is_ok();
+        let ok = |id, t| validate_target(&c, id, t, true).is_ok();
         assert!(ok(None, None));
         assert!(ok(None, Some(RouteKey::Important)));
         assert!(ok(None, Some(RouteKey::Split(1))));
@@ -540,9 +562,52 @@ mod tests {
         assert!(!ok(None, Some(RouteKey::Split(2))), "split without a tab");
         assert!(!ok(None, Some(RouteKey::Split(42))), "missing split");
         assert!(!ok(None, Some(RouteKey::Label(999))), "missing label");
-        // Rule 3 routes into split 1, so split 1 can't give up its tab.
+        // Rule 3 routes into split 1, so split 1 can't give up its tab, nor
+        // become a view tab that holds no routed mail.
         assert!(!ok(Some(1), Some(RouteKey::Other)));
+        assert!(validate_target(&c, Some(1), None, false).is_err());
         assert_eq!(detach_targets_to(&c, 1).unwrap(), 1);
         assert!(ok(Some(1), Some(RouteKey::Other)));
+
+        // A view tab routes nothing: no target, and nothing routes into it.
+        assert!(validate_target(&c, None, None, false).is_ok());
+        assert!(validate_target(&c, None, Some(RouteKey::Other), false).is_err());
+        c.execute("UPDATE split_rules SET exclusive = 0 WHERE id = 1", [])
+            .unwrap();
+        assert!(!ok(None, Some(RouteKey::Split(1))), "into a view tab");
+    }
+
+    #[test]
+    fn turning_a_split_into_a_view_tab_returns_its_mail_to_the_inbox() {
+        let c = testutil::conn();
+        testutil::seed_account(&c);
+        let gh = testutil::seed_message(&c, "noreply@github.com", "CI", true).0;
+        let before = vec![rule(1, "github", None)];
+        let ids = inbox_thread_ids(&c).unwrap();
+        apply_diff(&c, &[], &before, Fallback::Off, &ids).unwrap();
+        assert_eq!(routed(&c, gh).as_deref(), Some("split:1"));
+
+        let mut view = before.clone();
+        view[0].exclusive = false;
+        assert_eq!(impact(&c, &before, &view, 5).unwrap().moved, 1);
+        assert_eq!(
+            apply_diff(&c, &before, &view, Fallback::Off, &ids).unwrap(),
+            1
+        );
+        assert_eq!(routed(&c, gh), None, "back to Important/Other");
+        // A view tab never claims mail, even on a full re-route.
+        route_thread_deterministic(&c, &view, Fallback::Off, gh).unwrap();
+        assert_eq!(routed(&c, gh), None);
+
+        // Threads still parked in a view tab's key are orphans.
+        insert_rule(&c, 1, None);
+        c.execute("UPDATE split_rules SET exclusive = 0 WHERE id = 1", [])
+            .unwrap();
+        c.execute(
+            "UPDATE threads SET routed_tab = 'split:1' WHERE id = ?1",
+            params![gh],
+        )
+        .unwrap();
+        assert_eq!(orphaned_thread_ids(&c).unwrap(), vec![gh]);
     }
 }

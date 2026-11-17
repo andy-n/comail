@@ -520,6 +520,14 @@ export function SplitInboxSection() {
                   </>
                 ) : (
                   <>
+                    {it.rule.exclusive === false && (
+                      <span
+                        className="rounded bg-bg2 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase"
+                        title={t("settings:splits.exclusiveHint")}
+                      >
+                        {t("settings:splits.viewBadge")}
+                      </span>
+                    )}
                     <Button
                       size="sm"
                       icon="edit"
@@ -674,11 +682,14 @@ function SplitForm({
   // "" = the rule is its own tab; otherwise a route key routed into an existing tab.
   const [target, setTarget] = useState<string>(rule?.target ?? "");
   const [countAll, setCountAll] = useState(rule?.countAll === true);
+  // false = a view tab: lists matching inbox mail, which stays in Important.
+  const [exclusive, setExclusive] = useState(rule?.exclusive !== false);
   const [busy, setBusy] = useState(false);
   // Optional AI check (decision model): with no condition it alone decides.
   const [aiInstruction, setAiInstruction] = useState(rule?.ai?.instruction ?? "");
   const [aiMin, setAiMin] = useState<number | null>(rule?.ai?.minConfidence ?? null);
-  const hasAi = aiInstruction.trim() !== "";
+  // A view tab is listed in SQL, so it can't wait on an AI verdict.
+  const hasAi = exclusive && aiInstruction.trim() !== "";
   // Advanced mode edits a typed condition tree (AND/OR/NOT, more operators);
   // rules saved with one always reopen in it.
   const [mode, setMode] = useState<EditMode>(
@@ -767,12 +778,13 @@ function SplitForm({
           position: rule?.position ?? nextPosition,
           query,
           condition: mode === "advanced" ? effective : null,
-          target: target || null,
+          target: exclusive ? target || null : null,
           ai: hasAi
             ? { instruction: aiInstruction.trim(), minConfidence: aiMin }
             : null,
           // A targeted rule owns no tab, so the flag would be dead state.
-          countAll: target ? false : countAll,
+          countAll: target && exclusive ? false : countAll,
+          exclusive,
         },
       });
       // Routing an existing rule elsewhere removes its tab; don't leave the
@@ -960,18 +972,27 @@ function SplitForm({
           </div>
         </>
       )}
-      <AiCheckField
-        instruction={aiInstruction}
-        onInstruction={setAiInstruction}
-        minConfidence={aiMin}
-        onMinConfidence={setAiMin}
-        hasCondition={hasCondition}
-        feature="splits"
-      />
-      {/* Only a rule that owns a tab has a badge to change; a targeted rule's
-          mail is counted by the tab it routes into. */}
+      {exclusive && (
+        <AiCheckField
+          instruction={aiInstruction}
+          onInstruction={setAiInstruction}
+          minConfidence={aiMin}
+          onMinConfidence={setAiMin}
+          hasCondition={hasCondition}
+          feature="splits"
+        />
+      )}
+      {/* Only a rule that owns a tab has a badge to change, or can keep its
+          mail in the inbox; a targeted rule's mail is counted by the tab it
+          routes into. */}
       {!target && (
-        <div className="self-start">
+        <div className="flex flex-col gap-2 self-start">
+          <Checkbox
+            checked={exclusive}
+            onChange={setExclusive}
+            label={t("settings:splits.exclusiveLabel")}
+            hint={t("settings:splits.exclusiveHint")}
+          />
           <Checkbox
             checked={countAll}
             onChange={setCountAll}
@@ -980,25 +1001,29 @@ function SplitForm({
           />
         </div>
       )}
-      <FormField label={t("settings:splits.targetLabel")}>
-        <Select
-          className="self-start"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-        >
-          <option value="">{t("settings:splits.target.ownTab")}</option>
-          <option value="important">{t("inbox:split.important")}</option>
-          <option value="other">{t("inbox:split.other")}</option>
-          {autoLabels.map((l) => (
-            <option key={l.id} value={`label:${l.id}`}>
-              {l.name}
-            </option>
-          ))}
-        </Select>
-      </FormField>
-      <p className="-mt-1 text-xs text-ink-faint">
-        {t("settings:splits.targetHint")}
-      </p>
+      {exclusive && (
+        <>
+          <FormField label={t("settings:splits.targetLabel")}>
+            <Select
+              className="self-start"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            >
+              <option value="">{t("settings:splits.target.ownTab")}</option>
+              <option value="important">{t("inbox:split.important")}</option>
+              <option value="other">{t("inbox:split.other")}</option>
+              {autoLabels.map((l) => (
+                <option key={l.id} value={`label:${l.id}`}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <p className="-mt-1 text-xs text-ink-faint">
+            {t("settings:splits.targetHint")}
+          </p>
+        </>
+      )}
       {!hasCondition && !(hasAi && problems.length === 0) && (
         <p className="text-xs text-ink-faint">
           {problems.length > 0

@@ -230,7 +230,10 @@ export function RuleForm({
   const describeAction = useDescribeAction();
   const userLabels = (labels ?? []).filter((l) => !l.isAuto);
   const autoLabels = (labels ?? []).filter((l) => l.isAuto);
-  const ownTabSplits = (splits ?? []).filter((s) => s.target == null);
+  // A view tab lists mail by its condition and holds nothing routed into it.
+  const ownTabSplits = (splits ?? []).filter(
+    (s) => s.target == null && s.exclusive !== false,
+  );
 
   const [rule, setRule] = useState<AiAutomationRule>(initial);
   const [useCondition, setUseCondition] = useState(initial.condition != null);

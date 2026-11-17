@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 pub mod decide;
 pub mod reroute;
+pub mod sql;
 pub use decide::{Decision, RouteExplanation, RuleSubject, decide, explain};
 
 /// Everything the heuristic / AI classifier needs about a thread, taken from its
@@ -1262,6 +1263,7 @@ mod tests {
             target: Some(crate::models::RouteKey::Label(news)),
             ai: None,
             count_all: false,
+            exclusive: true,
         };
         route_thread_deterministic(&c, &[rule], Fallback::Heuristic, t).unwrap();
         let key: Option<String> = c
@@ -1451,6 +1453,7 @@ mod tests {
             target: Some(crate::models::RouteKey::Important),
             ai: None,
             count_all: false,
+            exclusive: true,
         };
         route_thread_deterministic(&c, &[rule], Fallback::Heuristic, t).unwrap();
         assert_eq!(routed(&c, t).as_deref(), Some("important"));
@@ -1640,12 +1643,18 @@ mod tests {
             target: None,
             ai: None,
             count_all: false,
+            exclusive: true,
         };
         // Before the label exists: no split matches, so the tab is left as-is.
         assert!(!reapply_splits_only(&c, std::slice::from_ref(&rule), t).unwrap());
         assert_eq!(routed(&c, t), None);
         // After labeling: the thread is promoted into the split.
         labels::add_to_message(&c, msg, label.id).unwrap();
+        // A view tab (automations' reapply included) never claims the thread.
+        let mut view = rule.clone();
+        view.exclusive = false;
+        assert!(!reapply_splits_only(&c, &[view], t).unwrap());
+        assert_eq!(routed(&c, t), None);
         assert!(reapply_splits_only(&c, &[rule], t).unwrap());
         assert_eq!(routed(&c, t).as_deref(), Some("split:5"));
     }
@@ -1783,6 +1792,7 @@ mod tests {
             target: None,
             ai: None,
             count_all: false,
+            exclusive: true,
         }];
         let raw = r#"```json
           {"supported":true,"name":"Invoices","instruction":"It is a vendor invoice","actions":[{"kind":"add_label","value":"7"},{"kind":"route_to","value":"split:3"}],"summary":"Label and route invoices","issues":[]}
