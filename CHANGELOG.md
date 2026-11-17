@@ -33,6 +33,11 @@ Installers for every release are on the
   sender, so their future mail follows. Z undoes a move.
 - **Hide label chips.** A layout setting hides label chips on rows, for
   when bundles already show the label.
+- **Bundle or top tab.** In the bundled avatar inbox, each tab can be a
+  bundle in Important or a tab of its own in the tab bar, after Important.
+  Pick per tab in Settings › Split inbox, or right-click a bundle or tab.
+  The tab bar shows Important and the top tabs, and Tab and Cmd+1–9 cycle
+  them; with mixed-in bundles it stays visible once any tab is on top.
 
 ### Fixed
 

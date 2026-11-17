@@ -4180,6 +4180,7 @@ impl Core {
                 let before = repo::splits::list(&tx)?;
                 route::reroute::detach_targets_to(&tx, id)?;
                 repo::splits::delete(&tx, id)?;
+                repo::settings::forget_tab_placement(&tx, &format!("s{id}"))?;
                 tx.commit()?;
                 Ok(before)
             })
@@ -4405,6 +4406,7 @@ impl Core {
             .write(move |conn| {
                 let was_category = repo::labels::get(conn, id)?.is_some_and(|l| l.is_auto);
                 repo::labels::delete(conn, id)?;
+                repo::settings::forget_tab_placement(conn, &format!("l{id}"))?;
                 // Cached verdicts may name the deleted category.
                 if was_category {
                     route::clear_cache(conn)?;

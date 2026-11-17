@@ -29,6 +29,16 @@ pub fn set(conn: &Connection, settings: &Settings) -> Result<()> {
     Ok(())
 }
 
+/// Drop a deleted tab's `tab_placement` entry (`s<split id>` / `l<label id>`),
+/// so a later tab that reuses the row id starts out as a bundle.
+pub fn forget_tab_placement(conn: &Connection, key: &str) -> Result<()> {
+    let mut settings = get(conn)?;
+    if settings.tab_placement.remove(key).is_some() {
+        set(conn, &settings)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +175,20 @@ mod tests {
         assert!(s.signatures.is_empty());
         assert!(s.ai_zero_retention);
         assert!(s.ai_quick_replies);
+        assert!(s.tab_placement.is_empty());
+    }
+
+    #[test]
+    fn forget_tab_placement_drops_only_that_key() {
+        let c = testutil::conn();
+        let mut s = get(&c).unwrap();
+        s.tab_placement.insert("s3".into(), "top".into());
+        s.tab_placement.insert("l7".into(), "top".into());
+        set(&c, &s).unwrap();
+        forget_tab_placement(&c, "s3").unwrap();
+        forget_tab_placement(&c, "s99").unwrap();
+        let s = get(&c).unwrap();
+        assert_eq!(s.tab_placement.len(), 1);
+        assert_eq!(s.tab_placement.get("l7").map(String::as_str), Some("top"));
     }
 }

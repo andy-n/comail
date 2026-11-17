@@ -12,12 +12,14 @@ import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../stores/ui";
 import { tabMatch } from "./labelTabs";
 import type { Bundle, BundleTab } from "./listItems";
 import { inboxTabOrder } from "./splitOrder";
+import { bundledTabOrder } from "./tabPlacement";
 
 /**
  * Avatar inbox UI: every other tab collapses into a bundle row inside the
- * Important list (Settings → Show other tabs as bundles turns it off). With
- * inline bundles on, bundles sit among the threads by their newest mail and
- * open in place. Shared by the list and ThreadOrderSync so J/K walks the
+ * Important list (Settings → Show other tabs as bundles turns it off), except
+ * tabs moved to the top bar (`tabPlacement`), which keep a tab of their own.
+ * With inline bundles on, bundles sit among the threads by their newest mail
+ * and open in place. Shared by the list and ThreadOrderSync so J/K walks the
  * threads of expanded bundles in display order.
  */
 export function useBundles(): { bundles: Bundle[]; show: boolean; inline: boolean } {
@@ -39,22 +41,23 @@ export function useBundles(): { bundles: Bundle[]; show: boolean; inline: boolea
     labelFilter == null &&
     folderFilter == null;
   const autoLabelsEnabled = settings?.autoLabelsEnabled !== false;
+  const placements = settings?.tabPlacement;
   const tabs = useMemo<BundleTab[]>(() => {
     if (!show) return [];
     const labelColor = (id: number) => labels?.find((l) => l.id === id)?.color;
-    return inboxTabOrder(splits, labels, autoLabelsEnabled).flatMap((item): BundleTab[] => {
-      if (item.kind === "important") return [];
-      if (item.kind === "other") return [{ key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER }];
+    const order = bundledTabOrder(inboxTabOrder(splits, labels, autoLabelsEnabled), placements);
+    return order.map((item): BundleTab => {
+      if (item.kind === "other") return { key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER };
       if (item.kind === "split") {
         // A split filed by one label (e.g. an AI-applied topic) takes that label's color.
         const anchor = tabMatch(item.rule);
         const color = anchor?.kind === "label" ? labelColor(anchor.labelId) : undefined;
         const view = item.rule.exclusive === false;
-        return [{ key: `s${item.id}`, name: item.name, splitId: item.id, color, view }];
+        return { key: `s${item.id}`, name: item.name, splitId: item.id, color, view };
       }
-      return [{ key: `l${item.id}`, name: item.name, labelId: item.id, color: item.label.color }];
+      return { key: `l${item.id}`, name: item.name, labelId: item.id, color: item.label.color };
     });
-  }, [show, splits, labels, autoLabelsEnabled, t]);
+  }, [show, splits, labels, autoLabelsEnabled, placements, t]);
   const pages = useInboxBundles(tabs, accountFilter, show);
   const { data: counts } = useUnreadCounts(accountFilter, show);
   const bundles = useMemo<Bundle[]>(

@@ -13,6 +13,10 @@
   "bundle": {
     "showAll": "Xem tất cả trong {{name}}"
   },
+  "placement": {
+    "moveToTop": "Chuyển lên thanh trên cùng",
+    "showAsBundle": "Hiện thành nhóm"
+  },
   "drag": {
     "count_one": "{{count}} cuộc hội thoại",
     "count_other": "{{count}} cuộc hội thoại",

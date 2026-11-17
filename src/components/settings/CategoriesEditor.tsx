@@ -6,6 +6,7 @@ import type { Label, Settings } from "../../ipc/types";
 import { LABEL_COLORS } from "../../lib/labelColors";
 import { queryClient } from "../../queries/client";
 import { useLabels } from "../../queries/hooks";
+import { forgetTabPlacement } from "../../queries/tabPlacement";
 import { useUi } from "../../stores/ui";
 import { Button, ConfirmButton, inputCls } from "./panelKit";
 
@@ -74,6 +75,7 @@ export function CategoriesEditor({
   const remove = async (label: Label) => {
     try {
       await call("delete_label", { labelId: label.id });
+      forgetTabPlacement(`l${label.id}`);
       if (settings.aiCategoryDescriptions[label.keyword] != null) {
         setDescriptionFor(label.keyword, "");
       }

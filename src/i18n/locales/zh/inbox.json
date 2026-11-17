@@ -13,6 +13,10 @@
   "bundle": {
     "showAll": "在{{name}}中查看全部"
   },
+  "placement": {
+    "moveToTop": "移到顶部标签栏",
+    "showAsBundle": "显示为分组"
+  },
   "drag": {
     "count_one": "{{count}} 个会话",
     "count_other": "{{count}} 个会话",

@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { call } from "../../ipc/commands";
 import { errorMessage } from "../../ipc/errors";
@@ -21,10 +21,12 @@ import {
   nextTabPosition,
   orderedTabKey,
 } from "../../lib/splitOrder";
+import { isBundledInbox, placementOf, type TabPlacement } from "../../lib/tabPlacement";
 import { useDragReorder } from "../../lib/useDragReorder";
 import { queryClient } from "../../queries/client";
-import { useLabels, useSplits } from "../../queries/hooks";
+import { useLabels, useSettings, useSplits } from "../../queries/hooks";
 import { persistTabOrder } from "../../queries/tabOrder";
+import { forgetTabPlacement, setTabPlacement } from "../../queries/tabPlacement";
 import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
 import {
@@ -186,6 +188,10 @@ export function SplitInboxSection() {
   const set = useUi((s) => s.set);
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
+  const { data: settings } = useSettings();
+  // Bundle | Top tab per tab, only where tabs fold into bundles.
+  const bundledInbox = isBundledInbox(settings);
+  const autoLabelsEnabled = settings?.autoLabelsEnabled !== false;
   const [editing, setEditing] = useState<SplitEditor | null>(null);
   // Drag handle to refocus once a keyboard reorder has re-rendered the list.
   const refocusKey = useRef<string | null>(null);
@@ -264,6 +270,7 @@ export function SplitInboxSection() {
   const deleteSplit = async (splitId: number) => {
     try {
       await call("delete_split", { splitId });
+      forgetTabPlacement(`s${splitId}`);
       // Don't leave the inbox pointed at a tab that no longer exists.
       if (useUi.getState().splitId === splitId) {
         set({
@@ -288,6 +295,7 @@ export function SplitInboxSection() {
   const deleteLabel = async (labelId: number) => {
     try {
       await call("delete_label", { labelId });
+      forgetTabPlacement(`l${labelId}`);
       if (useUi.getState().labelFilter === labelId) {
         set({
           labelFilter: null,
@@ -469,6 +477,11 @@ export function SplitInboxSection() {
                     </span>
                   )}
                 </span>
+                {/* Rules routed into another tab, and auto labels while they
+                    are off, own no tab to place. */}
+                {bundledInbox && (it.kind === "label" ? autoLabelsEnabled : it.rule.target == null) && (
+                  <TabPlacementControl tabKey={it.kind === "label" ? `l${it.id}` : `s${it.id}`} name={it.name} />
+                )}
                 {it.kind === "label" ? (
                   <>
                     <span className="rounded bg-bg2 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase">
@@ -521,6 +534,11 @@ export function SplitInboxSection() {
               name={t("settings:splits.builtin.otherName")}
               desc={t("settings:splits.builtin.otherDesc")}
               badge={t("settings:splits.builtin.lastBadge")}
+              placement={
+                bundledInbox ? (
+                  <TabPlacementControl tabKey="other" name={t("settings:splits.builtin.otherName")} />
+                ) : undefined
+              }
             />
           </SettingsGroup>
           <LabelTabsSection />
@@ -530,15 +548,36 @@ export function SplitInboxSection() {
   );
 }
 
+/** Bundle | Top tab: where a tab of the bundled avatar inbox appears.
+ *  Rendered only while bundles are on (see `isBundledInbox`). */
+export function TabPlacementControl({ tabKey, name }: { tabKey: string; name: string }) {
+  const { t } = useTranslation();
+  const { data: settings } = useSettings();
+  return (
+    <Segmented<TabPlacement>
+      label={t("settings:splits.placement.aria", { name })}
+      value={placementOf(settings?.tabPlacement, tabKey)}
+      options={[
+        { value: "bundle", label: t("settings:splits.placement.bundle") },
+        { value: "top", label: t("settings:splits.placement.top") },
+      ]}
+      onChange={(placement) => void setTabPlacement(tabKey, placement)}
+    />
+  );
+}
+
 /** A fixed, non-reorderable bucket (Important / Other) inside the tab list. */
 function BuiltinRow({
   name,
   desc,
   badge,
+  placement,
 }: {
   name: string;
   desc: string;
   badge: string;
+  /** Placement control for a built-in tab of the bundled inbox (Other). */
+  placement?: ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2.5 bg-bg2/60">
@@ -547,6 +586,7 @@ function BuiltinRow({
       <span className="ms-auto rounded bg-bg3 px-1.5 py-px text-2xs font-semibold tracking-wide text-ink-faint uppercase">
         {badge}
       </span>
+      {placement}
     </div>
   );
 }

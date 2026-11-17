@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   activeInboxTabKey,
@@ -7,6 +7,7 @@ import {
   moveTabByKey,
 } from "../../lib/splitOrder";
 import { tabRoute } from "../../lib/tabDrop";
+import { barTabOrder, inboxTabKey, isBundledInbox } from "../../lib/tabPlacement";
 import { dropTargetProps, useDropHighlight } from "../../lib/threadDrag";
 import { useDragReorder, type ReorderWiring } from "../../lib/useDragReorder";
 import { useModHeld } from "../../lib/useModHeld";
@@ -14,6 +15,7 @@ import { splitCount, useLabels, useSettings, useSplits, useUnreadCounts } from "
 import { persistTabOrder } from "../../queries/tabOrder";
 import { hasNewMail, useTabSeen } from "../../stores/tabSeen";
 import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
+import { TabPlacementMenu } from "./TabPlacementMenu";
 
 /** `reorder_tabs` identity of a bar tab; null for the pinned Important / Other. */
 function reorderKeyOf(tab: { splitId?: number; labelId?: number }): string | null {
@@ -35,20 +37,24 @@ export function SplitTabs() {
   // While ⌘/Ctrl is held, reveal each tab's jump-to number (Cmd+1..9).
   const modHeld = useModHeld();
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  // Right-click on a tab of the bundled inbox: move it back into a bundle.
+  const [menu, setMenu] = useState<{ x: number; y: number; key: string } | null>(null);
 
   const autoLabels = settings?.autoLabelsEnabled !== false;
+  const bundledInbox = isBundledInbox(settings);
+  const placements = settings?.tabPlacement;
+  // In the bundled inbox with top tabs, only Important and those (see barTabOrder).
   const tabs = useMemo<{ key: string; name: string; splitId?: number; labelId?: number }[]>(
     () =>
-      inboxTabOrder(splits, labels, autoLabels).map((item) => {
+      barTabOrder(inboxTabOrder(splits, labels, autoLabels), placements, bundledInbox).map((item) => {
+        const key = inboxTabKey(item);
         if (item.kind === "important")
-          return { key: "important", name: t("inbox:split.important"), splitId: SPLIT_IMPORTANT };
-        if (item.kind === "other")
-          return { key: "other", name: t("inbox:split.other"), splitId: SPLIT_OTHER };
-        if (item.kind === "split")
-          return { key: `s${item.id}`, name: item.name, splitId: item.id };
-        return { key: `l${item.id}`, name: item.name, labelId: item.id };
+          return { key, name: t("inbox:split.important"), splitId: SPLIT_IMPORTANT };
+        if (item.kind === "other") return { key, name: t("inbox:split.other"), splitId: SPLIT_OTHER };
+        if (item.kind === "split") return { key, name: item.name, splitId: item.id };
+        return { key, name: item.name, labelId: item.id };
       }),
-    [splits, labels, autoLabels, t],
+    [splits, labels, autoLabels, placements, bundledInbox, t],
   );
 
   // Drag a custom tab to reorder it; Important stays first and Other last.
@@ -139,12 +145,23 @@ export function SplitTabs() {
               active={activeKey === tab.key}
               focusable={focusKey === tab.key}
               onClick={() => selectInboxTab(tab)}
+              onContextMenu={
+                bundledInbox && tab.key !== "important"
+                  ? (e) => {
+                      e.preventDefault();
+                      setMenu({ x: e.clientX, y: e.clientY, key: tab.key });
+                    }
+                  : undefined
+              }
               reorder={rk == null ? undefined : reorder.wire(rk, reorderKeys)}
               tab={tab}
             />
           );
         })}
       </div>
+      {menu && (
+        <TabPlacementMenu x={menu.x} y={menu.y} tabKey={menu.key} onClose={() => setMenu(null)} />
+      )}
       {/* Hidden on narrow windows, where the tabs need the room. */}
       <span className="ms-auto hidden pb-1 text-xs whitespace-nowrap text-ink-faint min-[900px]:inline">
         {t("common:splitTabs.tabToSwitch")}
@@ -163,6 +180,7 @@ function SplitTab({
   active,
   focusable,
   onClick,
+  onContextMenu,
   reorder,
   tab,
 }: {
@@ -179,6 +197,8 @@ function SplitTab({
   /** the roving-tabindex stop of the tablist */
   focusable: boolean;
   onClick: () => void;
+  /** Right-click menu (tab placement); absent where it doesn't apply. */
+  onContextMenu?: (e: MouseEvent<HTMLButtonElement>) => void;
   /** Drag-to-reorder wiring; absent on the pinned Important / Other tabs. */
   reorder?: ReorderWiring;
   /** The tab's split / auto-label id: dragged mail can be dropped on it. */
@@ -204,6 +224,7 @@ function SplitTab({
         reorder?.onMouseDown(e);
       }}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       className={`relative flex shrink-0 items-center gap-1.5 px-3 pt-3 pb-2.5 text-md whitespace-nowrap transition-colors ${
         active
           ? "text-ink after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent"

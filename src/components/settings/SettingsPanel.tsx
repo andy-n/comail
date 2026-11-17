@@ -91,6 +91,7 @@ const DEFAULT_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   inlineBundles: false,
+  tabPlacement: {},
   showLabelChips: true,
   undoSendSeconds: 10,
   loadRemoteImages: false,

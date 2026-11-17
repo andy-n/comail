@@ -5,11 +5,13 @@ import { errorMessage } from "../../ipc/errors";
 import type { Label, SplitRule } from "../../ipc/types";
 import { findTab, tabCondition, type TabAnchor } from "../../lib/labelTabs";
 import { nextTabPosition } from "../../lib/splitOrder";
-import { useLabels, useSplits } from "../../queries/hooks";
+import { isBundledInbox } from "../../lib/tabPlacement";
+import { useLabels, useSettings, useSplits } from "../../queries/hooks";
+import { forgetTabPlacement } from "../../queries/tabPlacement";
 import { SPLIT_IMPORTANT, useUi } from "../../stores/ui";
 import { Icon } from "../ui/Icon";
 import { SettingsGroup, Toggle } from "./panelKit";
-import { invalidateSplitViews } from "./SplitsPanel";
+import { invalidateSplitViews, TabPlacementControl } from "./SplitsPanel";
 
 const anchorKey = (a: TabAnchor) => (a.kind === "starred" ? "starred" : `label:${a.labelId}`);
 
@@ -43,6 +45,7 @@ export async function setLabelTab(
     });
   } else if (!on && existing) {
     await call("delete_split", { splitId: existing.id });
+    forgetTabPlacement(`s${existing.id}`);
     // Don't leave the inbox pointed at a tab that no longer exists.
     if (useUi.getState().splitId === existing.id) {
       useUi.getState().set({
@@ -80,6 +83,9 @@ export function LabelTabsSection() {
   const pushToast = useUi((s) => s.pushToast);
   const { data: splits } = useSplits();
   const { data: labels } = useLabels();
+  const { data: settings } = useSettings();
+  // Bundle | Top tab, only where tabs fold into bundles.
+  const bundledInbox = isBundledInbox(settings);
   const [busy, setBusy] = useState<string | null>(null);
 
   const rows: { anchor: TabAnchor; name: string; color?: string }[] = [
@@ -119,6 +125,7 @@ export function LabelTabsSection() {
         <span className="min-w-0 flex-1" />
         <span className="w-24 text-center">{t("settings:splits.labelTabs.showAsTab")}</span>
         <span className="w-24 text-center">{t("settings:splits.labelTabs.hideFromInbox")}</span>
+        {bundledInbox && <span className="w-40 text-center">{t("settings:splits.placement.column")}</span>}
       </div>
       {rows.map(({ anchor, name, color }) => {
         const tab = findTab(splits, anchor);
@@ -152,6 +159,11 @@ export function LabelTabsSection() {
                 }}
               />
             </span>
+            {bundledInbox && (
+              <span className="flex w-40 justify-center">
+                {tab && <TabPlacementControl tabKey={`s${tab.id}`} name={name} />}
+              </span>
+            )}
           </div>
         );
       })}

@@ -13,6 +13,10 @@
   "bundle": {
     "showAll": "Show all in {{name}}"
   },
+  "placement": {
+    "moveToTop": "Move to top bar",
+    "showAsBundle": "Show as bundle"
+  },
   "drag": {
     "count_one": "{{count}} conversation",
     "count_other": "{{count}} conversations",

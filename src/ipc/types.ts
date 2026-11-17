@@ -512,6 +512,10 @@ export interface Settings {
   /** Avatar inbox UI: bundles sit among Important mail by their newest message
    *  and open in place; the tab bar is hidden on Important. */
   inlineBundles: boolean;
+  /** Bundled avatar inbox: per tab (`s<split id>`, `l<auto label id>`,
+   *  `other`), "top" lists it in the tab bar instead of as a bundle in
+   *  Important. Missing = "bundle". */
+  tabPlacement: Record<string, "bundle" | "top">;
   /** Show user-label chips before the subject in thread rows (both layouts). */
   showLabelChips: boolean;
   undoSendSeconds: number;

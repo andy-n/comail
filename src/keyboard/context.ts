@@ -14,6 +14,7 @@ import type {
   View,
 } from "../ipc/types";
 import { inboxTabOrder } from "../lib/splitOrder";
+import { barTabOrder, isBundledInbox } from "../lib/tabPlacement";
 import {
   deleteThreadDrafts,
   findCachedSummary,
@@ -123,8 +124,9 @@ export function advanceAfter(removed: number[]) {
   }
 }
 
-/** Inbox tabs in the same arranged order used by the visible tab bar. Shared
- * by tab cycling, direct jumps, and the command palette. */
+/** Inbox tabs in the same arranged order used by the visible tab bar: in the
+ * bundled inbox with top tabs, Important and those only (see barTabOrder).
+ * Shared by tab cycling, direct jumps, and the command palette. */
 export function inboxTabs(): {
   splitId: number | null;
   labelId: number | null;
@@ -132,10 +134,14 @@ export function inboxTabs(): {
 }[] {
   const splits = queryClient.getQueryData<SplitRule[]>(["splits"]);
   const labels = queryClient.getQueryData<Label[]>(["labels"]);
-  const autoOn =
-    queryClient.getQueryData<Settings>(["settings"])?.autoLabelsEnabled !==
-    false;
-  return inboxTabOrder(splits, labels, autoOn).map((item) => {
+  const settings = queryClient.getQueryData<Settings>(["settings"]);
+  const autoOn = settings?.autoLabelsEnabled !== false;
+  const order = barTabOrder(
+    inboxTabOrder(splits, labels, autoOn),
+    settings?.tabPlacement,
+    isBundledInbox(settings),
+  );
+  return order.map((item) => {
     if (item.kind === "important")
       return {
         splitId: SPLIT_IMPORTANT,
@@ -483,6 +489,7 @@ export function buildCommandContext(targetsOverride?: number[]): CommandCtx {
         showSenderPhotos: true,
         showBundles: true,
         inlineBundles: false,
+        tabPlacement: {},
         showLabelChips: true,
         undoSendSeconds: 10,
         loadRemoteImages: false,

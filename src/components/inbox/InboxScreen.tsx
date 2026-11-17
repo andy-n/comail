@@ -13,6 +13,8 @@ import { SPLIT_IMPORTANT, SPLIT_OTHER, useUi } from "../../stores/ui";
 import { accountColor, accountShortName } from "../../lib/format";
 import { folderLeafName } from "../../lib/folders";
 import { inlineThreadOrder, type Bundle } from "../../lib/listItems";
+import { inboxTabOrder } from "../../lib/splitOrder";
+import { hasTopTabs, isBundledInbox } from "../../lib/tabPlacement";
 import { useBundles } from "../../lib/useBundles";
 import { tabRoute } from "../../lib/tabDrop";
 import { ReauthBanner } from "../common/ReauthBanner";
@@ -103,6 +105,15 @@ export function InboxScreen() {
     (b: Bundle) => (inline ? toggleBundle(b.key) : selectInboxTab(b)),
     [inline, toggleBundle, selectInboxTab],
   );
+  // Inline bundles hide the tab bar on Important, unless tabs were moved to
+  // the top bar; then it lists Important and those (see barTabOrder).
+  const autoLabelsEnabled = settings?.autoLabelsEnabled !== false;
+  const tabPlacement = settings?.tabPlacement;
+  const bundledInbox = isBundledInbox(settings);
+  const topTabs = useMemo(
+    () => hasTopTabs(inboxTabOrder(splits, labels, autoLabelsEnabled), tabPlacement, bundledInbox),
+    [splits, labels, autoLabelsEnabled, tabPlacement, bundledInbox],
+  );
 
   // Inbox rows can be dragged onto other tabs; this is the tab they come
   // from (null for a folder or user-label filter, which isn't one tab).
@@ -118,7 +129,7 @@ export function InboxScreen() {
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col">
       <ReauthBanner />
-      {view === "inbox" && !inline && <SplitTabs />}
+      {view === "inbox" && (!inline || topTabs) && <SplitTabs />}
 
       {empty ? (
         <InboxZero viewTitle={emptyTitle} />

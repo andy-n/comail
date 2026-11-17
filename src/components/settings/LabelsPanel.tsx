@@ -6,6 +6,7 @@ import type { AiAutomationRule, Label, Settings } from "../../ipc/types";
 import { findTab } from "../../lib/labelTabs";
 import { queryClient } from "../../queries/client";
 import { useLabels, useSplits } from "../../queries/hooks";
+import { forgetTabPlacement } from "../../queries/tabPlacement";
 import { useUi } from "../../stores/ui";
 import { Button, ConfirmButton, EmptyState, FormField, inputCls, SettingsGroup, Toggle } from "./panelKit";
 import { newRule, RuleForm } from "./RulesEditor";
@@ -64,6 +65,7 @@ export function LabelsSection({
   const deleteLabel = async (labelId: number) => {
     try {
       await call("delete_label", { labelId });
+      forgetTabPlacement(`l${labelId}`);
     } catch (err) {
       pushToast({ kind: "error", message: t("settings:labels.deleteFailed", { detail: errorMessage(err) }) });
     } finally {

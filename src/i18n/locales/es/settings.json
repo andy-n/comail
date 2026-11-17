@@ -502,6 +502,12 @@
       "showAria": "Mostrar {{name}} como pestaña de la bandeja",
       "hideAria": "Ocultar de la bandeja el correo de {{name}}",
       "failed": "No se pudo actualizar la pestaña: {{detail}}"
+    },
+    "placement": {
+      "column": "Ubicación",
+      "bundle": "Grupo",
+      "top": "Pestaña superior",
+      "aria": "Dónde aparece {{name}}"
     }
   },
   "labels": {
@@ -584,7 +590,7 @@
   },
   "inlineBundles": {
     "label": "Mezclar los grupos en la lista",
-    "hint": "Coloca cada grupo entre tu correo Importante según su mensaje más reciente y ábrelo en su sitio, en lugar de fijar los grupos arriba. Oculta la barra de pestañas en Importante."
+    "hint": "Coloca cada grupo entre tu correo Importante según su mensaje más reciente y ábrelo en su sitio, en lugar de fijar los grupos arriba. Oculta la barra de pestañas en Importante salvo que alguna pestaña sea Pestaña superior."
   },
   "showLabelChips": {
     "label": "Mostrar etiquetas en la lista",

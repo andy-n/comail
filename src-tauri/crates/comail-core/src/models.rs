@@ -1041,6 +1041,12 @@ pub struct Settings {
     /// message and open them in place, instead of pinning them on top.
     #[serde(default)]
     pub inline_bundles: bool,
+    /// Bundled avatar inbox: per tab key (`s<split id>`, `l<auto label id>`,
+    /// `other`), `"top"` lists the tab in the tab bar instead of as a bundle
+    /// in Important. Missing = `"bundle"`. Deleting a split or label drops
+    /// its key.
+    #[serde(default)]
+    pub tab_placement: std::collections::HashMap<String, String>,
     /// Show user-label chips before the subject in thread rows. Bundles and
     /// label tabs already name the label, so the chips can be hidden.
     #[serde(default = "default_true")]
@@ -1418,6 +1424,7 @@ impl Default for Settings {
             show_sender_photos: true,
             show_bundles: true,
             inline_bundles: false,
+            tab_placement: std::collections::HashMap::new(),
             show_label_chips: true,
             undo_send_seconds: 10,
             load_remote_images: true,

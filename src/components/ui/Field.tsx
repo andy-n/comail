@@ -13,17 +13,21 @@ export function Segmented<T extends string | number>({
   value,
   options,
   onChange,
+  label,
 }: {
   value: T;
   options: { value: T; label: ReactNode }[];
   onChange: (v: T) => void;
+  /** Accessible name of the group (e.g. which row it belongs to). */
+  label?: string;
 }) {
   return (
-    <div className="flex rounded-control border border-hairline bg-bg0 p-0.5">
+    <div role="group" aria-label={label} className="flex rounded-control border border-hairline bg-bg0 p-0.5">
       {options.map((o) => (
         <button
           key={String(o.value)}
           type="button"
+          aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={`inline-flex items-center gap-1 rounded-md px-3 py-1 text-sm transition-colors duration-100 ${
             o.value === value

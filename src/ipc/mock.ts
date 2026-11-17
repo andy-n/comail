@@ -1504,6 +1504,7 @@ const DEFAULT_MOCK_SETTINGS: Settings = {
   showSenderPhotos: true,
   showBundles: true,
   inlineBundles: false,
+  tabPlacement: {},
   showLabelChips: true,
   undoSendSeconds: 10,
   loadRemoteImages: true,
@@ -1584,6 +1585,19 @@ let settings: Settings = (() => {
   }
   return { ...DEFAULT_MOCK_SETTINGS };
 })();
+
+/** Mirrors the backend: deleting a split or label drops its tab placement. */
+function forgetTabPlacement(key: string) {
+  if (!(key in settings.tabPlacement)) return;
+  const rest = { ...settings.tabPlacement };
+  delete rest[key];
+  settings = { ...settings, tabPlacement: rest };
+  try {
+    localStorage.setItem("comail:mock-settings", JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Calendar events (this week, relative to today)
@@ -3247,6 +3261,7 @@ export async function mockInvoke(
     case "delete_split": {
       const i = splits.findIndex((x) => x.id === a.splitId);
       if (i >= 0) splits.splice(i, 1);
+      forgetTabPlacement(`s${a.splitId}`);
       return delay(undefined);
     }
 
@@ -3417,6 +3432,7 @@ export async function mockInvoke(
       if (i >= 0) labels.splice(i, 1);
       for (const t of threads)
         t.labels = t.labels.filter((x) => x !== a.labelId);
+      forgetTabPlacement(`l${a.labelId}`);
       return delay(undefined);
     }
 

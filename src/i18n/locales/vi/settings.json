@@ -502,6 +502,12 @@
       "showAria": "Hiển thị {{name}} thành một tab trong hộp thư",
       "hideAria": "Ẩn thư {{name}} khỏi hộp thư đến",
       "failed": "Không thể cập nhật tab: {{detail}}"
+    },
+    "placement": {
+      "column": "Vị trí",
+      "bundle": "Nhóm",
+      "top": "Tab trên cùng",
+      "aria": "Nơi hiển thị {{name}}"
     }
   },
   "labels": {
@@ -584,7 +590,7 @@
   },
   "inlineBundles": {
     "label": "Xếp các nhóm vào danh sách",
-    "hint": "Đặt mỗi nhóm giữa các thư Quan trọng theo thư mới nhất của nhóm và mở ngay tại chỗ, thay vì ghim các nhóm ở trên cùng. Ẩn thanh tab ở Quan trọng."
+    "hint": "Đặt mỗi nhóm giữa các thư Quan trọng theo thư mới nhất của nhóm và mở ngay tại chỗ, thay vì ghim các nhóm ở trên cùng. Ẩn thanh tab ở Quan trọng, trừ khi có tab được đặt là Tab trên cùng."
   },
   "showLabelChips": {
     "label": "Hiện nhãn trong danh sách",

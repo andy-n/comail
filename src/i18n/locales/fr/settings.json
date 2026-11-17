@@ -502,6 +502,12 @@
       "showAria": "Afficher {{name}} comme onglet de la boîte de réception",
       "hideAria": "Masquer de la boîte de réception les messages {{name}}",
       "failed": "Impossible de mettre à jour l’onglet : {{detail}}"
+    },
+    "placement": {
+      "column": "Emplacement",
+      "bundle": "Groupe",
+      "top": "Onglet du haut",
+      "aria": "Où apparaît {{name}}"
     }
   },
   "labels": {
@@ -584,7 +590,7 @@
   },
   "inlineBundles": {
     "label": "Mêler les groupes à la liste",
-    "hint": "Place chaque groupe parmi vos e-mails Importants selon son message le plus récent et l'ouvre sur place, au lieu d'épingler les groupes en haut. Masque la barre d'onglets dans Important."
+    "hint": "Place chaque groupe parmi vos e-mails Importants selon son message le plus récent et l'ouvre sur place, au lieu d'épingler les groupes en haut. Masque la barre d'onglets dans Important, sauf si un onglet est réglé sur Onglet du haut."
   },
   "showLabelChips": {
     "label": "Afficher les pastilles de libellé",
